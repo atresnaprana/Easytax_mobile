@@ -1618,5 +1618,98 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
   Widget _buildPaginationControls() { if (_hasMoreData) { return Padding( padding: const EdgeInsets.symmetric(vertical: 16.0), child: Center( child: _isFetchingMore ? CircularProgressIndicator() : ElevatedButton( onPressed: () => _fetchJournalEntries(), child: Text('Load More'), ), ), ); } else if (_allEntries.isNotEmpty) { return Padding( padding: const EdgeInsets.symmetric(vertical: 24.0), child: Center(child: Text("End of list", style: TextStyle(color: Colors.grey))), ); } else { return SizedBox.shrink(); } }
   Widget _buildErrorWidget(String errorMessage) { return Center( child: Padding( padding: const EdgeInsets.all(20.0), child: Column( mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center, children: [ Icon(Icons.error_outline, color: Colors.red.shade700, size: 60), SizedBox(height: 15), Text('Failed to Load Data', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red.shade900), textAlign: TextAlign.center, ), SizedBox(height: 10), Text(errorMessage, textAlign: TextAlign.center, style: TextStyle(color: Colors.black87),), SizedBox(height: 25), ElevatedButton.icon( icon: Icon(Icons.refresh), label: Text('Retry'), onPressed: () => _fetchJournalEntries(isInitialLoad: true), style: ElevatedButton.styleFrom(foregroundColor: Colors.white, backgroundColor: Theme.of(context).primaryColor), ) ], ), )); }
 }
-class DownloadReportPage extends StatelessWidget { @override Widget build(BuildContext context) { return Scaffold( appBar: AppBar(title: Text('Download Report')), body: Center(child: Text('Download Report Page - Implement Here')), ); } }
-class AdminMenuPage extends StatelessWidget { @override Widget build(BuildContext context) { return Scaffold( appBar: AppBar(title: Text('Admin Menu')), body: Center(child: Text('Admin Menu Page - Implement Here')), ); } }
+class DownloadReportPage extends StatelessWidget {
+
+  // Placeholder function to simulate download initiation
+  void _initiateDownload(BuildContext context, String reportName) {
+    // Show feedback to the user
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Preparing $reportName report download...'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    // TODO: Implement actual download logic here:
+    // 1. Get necessary parameters (e.g., date range, company ID). You might need input fields on this page or pass them from elsewhere.
+    // 2. Get auth token from SharedPreferences.
+    // 3. Construct the correct API endpoint URL (e.g., /api/Reports/TrialBalance, /api/Reports/ProfitLoss).
+    // 4. Make the API call (likely a GET request) using the http package, including headers.
+    // 5. Handle the response:
+    //    - Check status code (200 OK).
+    //    - If successful, get the file data (e.g., response.bodyBytes).
+    //    - Determine the file type from response headers (e.g., 'Content-Type': 'application/pdf').
+    //    - Use packages like 'path_provider' to get a temporary directory.
+    //    - Write the bytes to a file.
+    //    - Use a package like 'open_file' or 'share_plus' to open or share the downloaded file.
+    // 6. Handle errors (network, API errors, file writing errors) and show appropriate messages.
+
+    print("Download requested for: $reportName");
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Download Report'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 30.0), // Add padding
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.start, // Align content to the top
+          crossAxisAlignment: CrossAxisAlignment.stretch, // Make buttons fill width
+          children: <Widget>[
+            Text(
+              'Select a report type:',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 40), // Add space
+
+            // --- Trial Balance Button ---
+            ElevatedButton.icon(
+              icon: Icon(Icons.account_balance_wallet_outlined),
+              label: Text('Trial Balance'),
+              style: ElevatedButton.styleFrom(
+                padding: EdgeInsets.symmetric(vertical: 18), // Make button taller
+                textStyle: TextStyle(fontSize: 18), // Increase font size
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), // Rounded corners
+              ),
+              onPressed: () {
+                _initiateDownload(context, 'Trial Balance');
+              },
+            ),
+            SizedBox(height: 25), // Add space between buttons
+
+            // --- Profit and Loss Button ---
+            ElevatedButton.icon(
+              icon: Icon(Icons.assessment_outlined), // Chart/Assessment icon
+              label: Text('Profit and Loss'),
+              style: ElevatedButton.styleFrom(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                textStyle: TextStyle(fontSize: 18),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                backgroundColor: Colors.green, // Example: Different color
+                foregroundColor: Colors.white, // Text color for colored button
+              ),
+              onPressed: () {
+                _initiateDownload(context, 'Profit and Loss');
+              },
+            ),
+
+            // --- Add more report buttons here if needed ---
+            // SizedBox(height: 25),
+            // ElevatedButton.icon(
+            //   icon: Icon(Icons.receipt_long),
+            //   label: Text('Another Report'),
+            //   onPressed: () {
+            //     _initiateDownload(context, 'Another Report');
+            //   },
+            //   // ... style ...
+            // ),
+          ],
+        ),
+      ),
+    );
+  }
+}class AdminMenuPage extends StatelessWidget { @override Widget build(BuildContext context) { return Scaffold( appBar: AppBar(title: Text('Admin Menu')), body: Center(child: Text('Admin Menu Page - Implement Here')), ); } }
