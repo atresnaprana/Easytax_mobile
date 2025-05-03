@@ -286,9 +286,11 @@ class MyApp extends StatelessWidget {
 }
 
 // --- Splash Screen ---
+// --- Splash Screen (with Custom Logo) ---
 class SplashScreen extends StatelessWidget {
   Future<bool> _checkLoginStatus() async {
-    await Future.delayed(Duration(milliseconds: 500));
+    // Keep the delay or adjust as needed
+    await Future.delayed(Duration(seconds: 2)); // Increased delay slightly for logo visibility
     SharedPreferences prefs = await SharedPreferences.getInstance();
     return prefs.getBool('loggedIn') ?? false;
   }
@@ -298,19 +300,68 @@ class SplashScreen extends StatelessWidget {
     return FutureBuilder<bool>(
       future: _checkLoginStatus(),
       builder: (context, snapshot) {
+        // Show logo and optional indicator while waiting
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Scaffold(body: Center(child: CircularProgressIndicator()));
-        } else {
-          if (snapshot.hasError) { print("Error checking login: ${snapshot.error}"); return LoginPage(); }
-          if (snapshot.data == true) { return DashboardPage(); }
-          else { return LoginPage(); }
+          return Scaffold(
+            // Optional: Set a background color matching your app theme or logo background
+            backgroundColor: Colors.white, // Example: white background
+            body: Center(
+              child: Column( // Use Column to stack logo and indicator
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  // --- Your Logo ---
+                  Image.asset(
+                    'assets/easytaxlandscape.png', // <-- *** REPLACE WITH YOUR LOGO PATH ***
+                    height: 150, // Adjust size as needed
+                    // width: 150, // You can also set width
+                  ),
+                  SizedBox(height: 24), // Spacing between logo and indicator
+                  // --- Optional Loading Indicator ---
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue), // Match your theme
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        // Once future completes, navigate based on login status
+        else {
+          if (snapshot.hasError) {
+            print("Error checking login: ${snapshot.error}");
+            // Consider showing an error message briefly before navigating
+            return LoginPage(); // Default to login on error
+          }
+          if (snapshot.data == true) {
+            // Navigate to Dashboard
+            // Using WidgetsBinding ensures navigation happens after build completes
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              Navigator.pushReplacement(
+                context, MaterialPageRoute(builder: (context) => DashboardPage()),
+              );
+            });
+          } else {
+            // Navigate to Login
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              Navigator.pushReplacement(
+                context, MaterialPageRoute(builder: (context) => LoginPage()),
+              );
+            });
+          }
+          // Return a temporary placeholder while navigation is scheduled
+          // This prevents a brief flash of the splash content after the future completes
+          // but before navigation occurs.
+          return Scaffold(
+            backgroundColor: Colors.white, // Match the splash background
+            body: Center(child: CircularProgressIndicator()), // Or just an empty container
+          );
         }
       },
     );
   }
 }
-
 // --- Login Page ---
+// --- Login Page (with Logo) ---
 class LoginPage extends StatefulWidget {
   @override
   _LoginPageState createState() => _LoginPageState();
@@ -330,6 +381,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _login() async {
+    // ... (login logic remains the same) ...
     if (_isLoading) return;
     setState(() { _isLoading = true; _error = null; });
     final username = _usernameController.text.trim();
@@ -347,7 +399,9 @@ class _LoginPageState extends State<LoginPage> {
         var data = json.decode(response.body); String? token = data['token'];
         if (token != null && token.isNotEmpty) {
           SharedPreferences prefs = await SharedPreferences.getInstance();
-          await prefs.setString('auth_token', token); await prefs.setString('userid', username); await prefs.setBool('loggedIn', true);
+          await prefs.setString('auth_token', token);
+          await prefs.setString('userid', username);
+          await prefs.setBool('loggedIn', true);
           print("Login successful. Token saved: $token");
           Navigator.pushReplacement( context, MaterialPageRoute(builder: (context) => DashboardPage()), ); return;
         } else { _error = "Login successful, but no token received."; }
@@ -359,31 +413,178 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Login')),
-      body: Center( child: SingleChildScrollView( padding: const EdgeInsets.all(24.0), child: Column( mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text('EasyTax', style: Theme.of(context).textTheme.headlineMedium), SizedBox(height: 30),
-        if (_error != null) Padding( padding: const EdgeInsets.only(bottom: 12.0), child: Text(_error!, style: TextStyle(color: Colors.red, fontSize: 14), textAlign: TextAlign.center), ),
-        TextField( controller: _usernameController, decoration: InputDecoration( labelText: 'Username', prefixIcon: Icon(Icons.person), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), ), keyboardType: TextInputType.text, textInputAction: TextInputAction.next, ),
-        SizedBox(height: 16), TextField( controller: _passwordController, obscureText: true, decoration: InputDecoration( labelText: 'Password', prefixIcon: Icon(Icons.lock), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), ), textInputAction: TextInputAction.done, onSubmitted: (_) => _login(), ),
-        SizedBox(height: 24), _isLoading ? CircularProgressIndicator() : ElevatedButton( onPressed: _login, child: Text('Login'), style: ElevatedButton.styleFrom( minimumSize: Size(double.infinity, 50), textStyle: TextStyle(fontSize: 18), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)) ), ),
-      ], ), ), ), );
+      // Optional: Remove AppBar if the logo makes it redundant
+      // appBar: AppBar(title: Text('Login')),
+      body: SafeArea( // Use SafeArea to avoid notch/system intrusions
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // --- ADD YOUR LOGO HERE ---
+                Image.asset(
+                  'assets/easytaxlandscape.png', // <-- *** REPLACE WITH YOUR LOGO PATH ***
+                  height: 300, // Adjust size as needed for login screen
+                  // width: 150,
+                ),
+                SizedBox(height: 24), // Spacing after logo
+
+
+
+                // --- Error Message ---
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: Text(_error!, style: TextStyle(color: Colors.red, fontSize: 14), textAlign: TextAlign.center),
+                  ),
+
+                // --- Username Field ---
+                TextField(
+                  controller: _usernameController,
+                  decoration: InputDecoration( labelText: 'Username', prefixIcon: Icon(Icons.person), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), ),
+                  keyboardType: TextInputType.text,
+                  textInputAction: TextInputAction.next,
+                ),
+                SizedBox(height: 16),
+
+                // --- Password Field ---
+                TextField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: InputDecoration( labelText: 'Password', prefixIcon: Icon(Icons.lock), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), ),
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _login(),
+                ),
+                SizedBox(height: 24),
+
+                // --- Login Button / Loading Indicator ---
+                _isLoading
+                    ? CircularProgressIndicator()
+                    : ElevatedButton(
+                  onPressed: _login,
+                  child: Text('Login'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: Size(double.infinity, 50),
+                    textStyle: TextStyle(fontSize: 18),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
-
 // --- Dashboard Page ---
+// --- Dashboard Page (with App Logo instead of User Avatar) ---
 class DashboardPage extends StatefulWidget {
   @override
   _DashboardPageState createState() => _DashboardPageState();
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  String? _userIdentifier; bool _isLoading = true;
-  @override void initState() { super.initState(); _loadUserData(); }
-  Future<void> _loadUserData() async { SharedPreferences prefs = await SharedPreferences.getInstance(); if (!mounted) return; setState(() { _userIdentifier = prefs.getString('userid') ?? 'N/A'; _isLoading = false; }); }
-  void _logout() async { SharedPreferences prefs = await SharedPreferences.getInstance(); await prefs.remove('auth_token'); await prefs.remove('userid'); await prefs.setBool('loggedIn', false); if (!mounted) return; Navigator.of(context).pushAndRemoveUntil( MaterialPageRoute(builder: (context) => LoginPage()), (Route<dynamic> route) => false, ); }
-  void _navigate(Widget page) { Navigator.push(context, MaterialPageRoute(builder: (context) => page)); }
-  Widget _buildTile(IconData icon, String label, Widget page) { return InkWell( onTap: () => _navigate(page), borderRadius: BorderRadius.circular(12), child: Container( decoration: BoxDecoration( color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.grey.shade300, blurRadius: 6, offset: Offset(0, 3))], ), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [ Icon(icon, size: 40, color: Theme.of(context).primaryColor), SizedBox(height: 10), Padding( padding: const EdgeInsets.symmetric(horizontal: 8.0), child: Text(label, style: TextStyle(fontSize: 16), textAlign: TextAlign.center), ), ], ), ), ); }
-  @override Widget build(BuildContext context) { return Scaffold( appBar: AppBar(title: Text('Dashboard'), actions: [ IconButton(icon: Icon(Icons.logout), tooltip: 'Logout', onPressed: _logout), ], ), body: _isLoading ? Center(child: CircularProgressIndicator()) : Column(children: [ SizedBox(height: 20), CircleAvatar( radius: 40, backgroundImage: NetworkImage( 'https://via.placeholder.com/150/5c6bc0/FFFFFF?text=${_userIdentifier?[0].toUpperCase() ?? 'U'}', ), backgroundColor: Colors.grey.shade300, ), SizedBox(height: 10), Text(_userIdentifier ?? 'User', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), SizedBox(height: 20), Expanded( child: GridView.count( crossAxisCount: 2, padding: EdgeInsets.all(16), crossAxisSpacing: 16, mainAxisSpacing: 16, children: [ _buildTile(Icons.book_outlined, 'Memorial Journal', MemorialJournalPage()), _buildTile(Icons.receipt_long_outlined, 'Sales Journal', SalesJournalPage()), _buildTile(Icons.shopping_cart_outlined, 'Purchasing Journal', PurchasingJournalPage()), _buildTile(Icons.download_for_offline_outlined, 'Download Report', DownloadReportPage()), _buildTile(Icons.admin_panel_settings_outlined, 'Admin Menu', AdminMenuPage()), ], ), ), ], ), ); }
+  String? _userIdentifier;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _userIdentifier = prefs.getString('userid') ?? 'N/A';
+      _isLoading = false;
+    });
+  }
+
+  void _logout() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    await prefs.remove('userid');
+    await prefs.setBool('loggedIn', false);
+    if (!mounted) return;
+    // Use context available in the State class directly
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => LoginPage()), (Route<dynamic> route) => false,
+    );
+  }
+
+  void _navigate(Widget page) {
+    // Use context available in the State class directly
+    Navigator.push(context, MaterialPageRoute(builder: (context) => page));
+  }
+
+  Widget _buildTile(IconData icon, String label, Widget page) {
+    return InkWell(
+      onTap: () => _navigate(page),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.grey.shade300, blurRadius: 6, offset: Offset(0, 3))],
+        ),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 40, color: Theme.of(context).primaryColor),
+          SizedBox(height: 10),
+          Padding( padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Text(label, style: TextStyle(fontSize: 16), textAlign: TextAlign.center),
+          ),
+        ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Dashboard'), actions: [
+        IconButton(icon: Icon(Icons.logout), tooltip: 'Logout', onPressed: _logout),
+      ],
+      ),
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator())
+          : Column(children: [
+        SizedBox(height: 30), // Adjusted top spacing
+
+        // --- REPLACE CircleAvatar with App Logo ---
+        Image.asset(
+          'assets/easytaxlandscape.png', // <-- *** REPLACE WITH YOUR LOGO PATH ***
+          height: 110, // Adjust size as needed for dashboard
+          // width: 150, // Optional: Set width if needed
+        ),
+        // -----------------------------------------
+
+        SizedBox(height: 15), // Adjusted spacing after logo
+
+        // --- Keep User Identifier Text ---
+        Text(_userIdentifier ?? 'User', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        SizedBox(height: 25), // Adjusted spacing before grid
+
+        // --- Grid View remains the same ---
+        Expanded( child: GridView.count(
+          crossAxisCount: 2, padding: EdgeInsets.all(16),
+          crossAxisSpacing: 16, mainAxisSpacing: 16,
+          children: [
+            _buildTile(Icons.book_outlined, 'Memorial Journal', MemorialJournalPage()),
+            _buildTile(Icons.receipt_long_outlined, 'Sales Journal', SalesJournalPage()),
+            _buildTile(Icons.shopping_cart_outlined, 'Purchasing Journal', PurchasingJournalPage()),
+            _buildTile(Icons.download_for_offline_outlined, 'Download Report', DownloadReportPage()),
+            _buildTile(Icons.admin_panel_settings_outlined, 'Admin Menu', AdminMenuPage()),
+          ],
+        ),
+        ),
+      ],
+      ),
+    );
+  }
 }
 
 // ================================================================
