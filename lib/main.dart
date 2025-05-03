@@ -590,24 +590,468 @@ class _DashboardPageState extends State<DashboardPage> {
 // ================================================================
 // ADD MEMORIAL JOURNAL ENTRY PAGE
 // ================================================================
-class AddSalesJournalEntryPage extends StatelessWidget {
+class AddSalesJournalEntryPage extends StatefulWidget { // Added StatefulWidget definition
+  @override
+  _AddSalesJournalEntryPageState createState() => _AddSalesJournalEntryPageState();
+}
+
+class _AddSalesJournalEntryPageState extends State<AddSalesJournalEntryPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _descriptionController = TextEditingController();
+  final _valueController = TextEditingController();
+  final _valueDiscController = TextEditingController(); // Controller for Discount Value
+
+  DateTime? _selectedDate;
+  List<Account> _accountsList = [];
+  Account? _selectedDebitAccount;
+  Account? _selectedCreditAccount;
+  Account? _selectedDebitAccountDisc;  // State for Debit Discount Account
+  Account? _selectedCreditAccountDisc; // State for Credit Discount Account
+
+  bool _isLoadingAccounts = true;
+  String? _accountError;
+  bool _isSubmitting = false;
+  String? _submitError;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAccounts();
+    _selectedDate = DateTime.now();
+  }
+
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    _valueController.dispose();
+    _valueDiscController.dispose(); // Dispose discount controller
+    super.dispose();
+  }
+
+  // --- Fetch Accounts (No changes needed here) ---
+  Future<void> _fetchAccounts() async {
+    if (!mounted) return; setState(() { _isLoadingAccounts = true; _accountError = null; }); try { SharedPreferences prefs = await SharedPreferences.getInstance(); String? token = prefs.getString('auth_token'); if (token == null || token.isEmpty) { throw Exception('Authentication required.'); } final url = Uri.parse('$baseUrl/api/API/getddAccount'); final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', }; final response = await http.get(url, headers: headers).timeout(Duration(seconds: 30)); if (!mounted) return; if (response.statusCode == 200) { final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes)); setState(() { _accountsList = data.map((jsonItem) => Account.fromJson(jsonItem)).toList(); _isLoadingAccounts = false; }); } else { throw Exception('Failed to load accounts. Status Code: ${response.statusCode}'); } } on TimeoutException { _accountError = "Fetching accounts timed out."; } on http.ClientException catch (e) { _accountError = "Network error fetching accounts: ${e.message}."; } catch (e) { print("Error fetching accounts: $e"); _accountError = "An error occurred fetching accounts: ${e.toString()}"; } finally { if (mounted) { setState(() { _isLoadingAccounts = false; }); } }
+  }
+
+  // --- Select Date (No changes needed here) ---
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker( context: context, initialDate: _selectedDate ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2101), ); if (picked != null && picked != _selectedDate && mounted) { setState(() { _selectedDate = picked; }); }
+  }
+
+  // --- Submit Journal Entry (CORRECTED Validation & Parsing) ---
+  Future<void> _submitJournalEntry() async {
+    if (!_formKey.currentState!.validate()) { return; }
+
+    // Basic validation
+    if (_selectedDate == null || _selectedDebitAccount == null || _selectedCreditAccount == null) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please fill Date, Debit Account, and Credit Account.'), backgroundColor: Colors.orange));
+      return;
+    }
+    // Check if main accounts are the same
+    if (_selectedDebitAccount!.accountNo == _selectedCreditAccount!.accountNo) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Main Debit and Credit accounts cannot be the same.'), backgroundColor: Colors.orange));
+      return;
+    }
+
+    // --- ADDED: Validation for Discount Accounts (if selected) ---
+    // Modify this logic if discount accounts are *required* even if discount amount is 0
+    bool hasDiscountAmount = _valueDiscController.text.replaceAll('.', '').isNotEmpty && double.tryParse(_valueDiscController.text.replaceAll('.', '')) != 0;
+    if (hasDiscountAmount) {
+      if (_selectedDebitAccountDisc == null || _selectedCreditAccountDisc == null) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please select both Debit and Credit Discount accounts if entering a discount value.'), backgroundColor: Colors.orange));
+        return;
+      }
+      if (_selectedDebitAccountDisc!.accountNo == _selectedCreditAccountDisc!.accountNo) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Discount Debit and Credit accounts cannot be the same.'), backgroundColor: Colors.orange));
+        return;
+      }
+      // Optional: Check if discount accounts conflict with main accounts
+      // if (_selectedDebitAccountDisc!.accountNo == _selectedDebitAccount!.accountNo || ... etc) { ... }
+    }
+    // ----------------------------------------------------------
+
+    setState(() { _isSubmitting = true; _submitError = null; });
+
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty) { throw Exception('Authentication required.'); }
+
+      final String formattedDate = DateFormat("yyyy-MM-dd").format(_selectedDate!);
+      final String description = _descriptionController.text;
+      final int debitAccountNo = _selectedDebitAccount!.accountNo;
+      final int creditAccountNo = _selectedCreditAccount!.accountNo;
+
+      // --- CORRECTED: Use correct controller for discount value ---
+      final String valueString = _valueController.text.replaceAll('.', '');
+      final String valueDiscString = _valueDiscController.text.replaceAll('.', ''); // Use discount controller
+      // --------------------------------------------------------
+
+      final double? amount = double.tryParse(valueString);
+      // Parse discount, default to 0.0 if empty or invalid
+      final double amountdisc = double.tryParse(valueDiscString) ?? 0.0;
+
+      if (amount == null || amount <= 0) {
+        // Keep validation for the main value
+        throw Exception('Invalid or zero amount entered for Value.');
+      }
+
+      // Convert to int for the body
+      final int amountInt = amount.toInt();
+      final int amountdiscInt = amountdisc.toInt();
+
+      // Handle null discount accounts if amount is zero (send 0 or null based on API needs)
+      // Sending 0 if not selected and amount is 0 might be safer if API expects the fields
+      final int debitAccountNoDisc = (amountdiscInt != 0 && _selectedDebitAccountDisc != null) ? _selectedDebitAccountDisc!.accountNo : 0; // Or handle null if API allows
+      final int creditAccountNoDisc = (amountdiscInt != 0 && _selectedCreditAccountDisc != null) ? _selectedCreditAccountDisc!.accountNo : 0;// Or handle null if API allows
+
+      // Prepare body, ensure keys match API ('Value_Disc', 'Akun_Debit_disc' etc.)
+      final body = json.encode({
+        "TransDate": formattedDate,
+        "Description": description,
+        "Akun_Debit": debitAccountNo,
+        "Akun_Credit": creditAccountNo,
+        // Use names consistent with your API expectation
+        "Akun_Debit_disc": debitAccountNoDisc,
+        "Akun_Credit_disc": creditAccountNoDisc,
+        "Value": amountInt,
+        "Value_Disc": amountdiscInt,
+      });
+
+      final url = Uri.parse('$baseUrl/api/API/SubmitJPN');
+      final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', };
+      print("Submitting JPB: $body");
+
+      final response = await http.post(url, headers: headers, body: body).timeout(Duration(seconds: 30));
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print("Submit Success: ${response.body}");
+        ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text('Purchase Journal entry submitted successfully!'), backgroundColor: Colors.green), );
+        Navigator.pop(context, true);
+      } else {
+        String serverMessage = response.reasonPhrase ?? 'Submission Failed';
+        try { var errorData = json.decode(response.body); serverMessage = errorData['message'] ?? errorData['title'] ?? errorData['error'] ?? serverMessage; } catch(_) { /* Ignore */ }
+        print("Submit Failed Body: ${response.body}");
+        throw Exception('Failed to submit entry. Server Response: ${response.statusCode} - $serverMessage');
+      }
+    } on TimeoutException { _submitError = "Submission request timed out.";
+    } on http.ClientException catch (e) { _submitError = "Network error during submission: ${e.message}.";
+    } catch (e) { print("Error submitting purchase journal entry: $e"); _submitError = "An error occurred during submission: ${e.toString()}";
+    } finally { if (mounted) { setState(() { _isSubmitting = false; }); } }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Add Sales Journal Entry')),
-      body: Center(child: Text('Form to add new Sales entry will be here.')),
-    );
+      // --- Correct AppBar Title ---
+      appBar: AppBar(title: Text('Add Sales Journal')),
+      // --------------------------
+      body: SingleChildScrollView( padding: const EdgeInsets.all(16.0), child: Form( key: _formKey, child: Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // --- Date (No changes) ---
+        Text('Transaction Date:', style: Theme.of(context).textTheme.titleMedium), SizedBox(height: 8),
+        InkWell( onTap: () => _selectDate(context), child: InputDecorator( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), suffixIcon: Icon(Icons.calendar_today), ), child: Text( _selectedDate == null ? 'Select Date' : DateFormat('dd MMM yyyy').format(_selectedDate!), style: TextStyle(fontSize: 16), ), ), ),
+        SizedBox(height: 16),
+        // --- Description (No changes) ---
+        TextFormField( controller: _descriptionController, decoration: InputDecoration( labelText: 'Description', border: OutlineInputBorder(), hintText: 'Enter transaction description', ), maxLines: 2, textCapitalization: TextCapitalization.sentences, validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter a description.'; } return null; }, ),
+        SizedBox(height: 16),
+        // --- Accounts Loading/Error (No changes) ---
+        if (_isLoadingAccounts) Center(child: Padding(padding: const EdgeInsets.all(8.0), child: CircularProgressIndicator()))
+        else if (_accountError != null) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0), child: Text('Error loading accounts: $_accountError', style: TextStyle(color: Colors.red)), )
+        else ...[
+            // --- Main Debit/Credit Dropdowns (No changes) ---
+            DropdownButtonFormField<Account>( value: _selectedDebitAccount, isExpanded: true, decoration: InputDecoration( labelText: 'Debit Account', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ), hint: Text('Select Debit Account'), items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(), onChanged: (Account? newValue) { setState(() { _selectedDebitAccount = newValue; }); }, validator: (value) => value == null ? 'Please select a debit account.' : null, ),
+            SizedBox(height: 16),
+            DropdownButtonFormField<Account>( value: _selectedCreditAccount, isExpanded: true, decoration: InputDecoration( labelText: 'Credit Account', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ), hint: Text('Select Credit Account'), items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(), onChanged: (Account? newValue) { setState(() { _selectedCreditAccount = newValue; }); }, validator: (value) => value == null ? 'Please select a credit account.' : null, ),
+            SizedBox(height: 16),
+            // --- Discount Debit Account Dropdown (CORRECTED onChanged) ---
+            DropdownButtonFormField<Account>(
+              value: _selectedDebitAccountDisc,
+              isExpanded: true,
+              decoration: InputDecoration( labelText: 'Debit Disc Account (Optional)', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ),
+              hint: Text('Select Debit Disc Account'),
+              items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(),
+              // --- CORRECTED setState ---
+              onChanged: (Account? newValue) { setState(() { _selectedDebitAccountDisc = newValue; }); },
+              // No validator, assuming optional
+            ),
+            SizedBox(height: 16),
+            // --- Discount Credit Account Dropdown (CORRECTED onChanged) ---
+            DropdownButtonFormField<Account>(
+              value: _selectedCreditAccountDisc,
+              isExpanded: true,
+              decoration: InputDecoration( labelText: 'Credit Disc Account (Optional)', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ),
+              hint: Text('Select Credit Disc Account'),
+              items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(),
+              // --- CORRECTED setState ---
+              onChanged: (Account? newValue) { setState(() { _selectedCreditAccountDisc = newValue; }); },
+              // No validator, assuming optional
+            ),
+            SizedBox(height: 16),
+          ],
+        // --- Main Value Input ---
+        TextFormField(
+          controller: _valueController,
+          decoration: InputDecoration( labelText: 'Value', border: OutlineInputBorder(), hintText: 'Enter amount', ),
+          keyboardType: TextInputType.number,
+          inputFormatters: [ ThousandsFormatter(), ],
+          validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter an amount for Value.'; } final cleanedValue = value.replaceAll('.', ''); final number = double.tryParse(cleanedValue); if (number == null || number <= 0) { return 'Please enter a valid positive amount for Value.'; } return null; },
+        ),
+        SizedBox(height: 16), // Adjusted spacing
+
+        // --- Discount Value Input (Optional) ---
+        TextFormField(
+          controller: _valueDiscController, // Use correct controller
+          decoration: InputDecoration( labelText: 'Value Disc (Optional)', border: OutlineInputBorder(), hintText: 'Enter discount amount', ),
+          keyboardType: TextInputType.number,
+          inputFormatters: [ ThousandsFormatter(), ],
+          // --- REMOVED Validator to make it optional ---
+          // validator: (value) { ... },
+        ),
+        SizedBox(height: 24),
+
+        if (_submitError != null) Padding( padding: const EdgeInsets.only(bottom: 12.0), child: Text(_submitError!, style: TextStyle(color: Colors.red), textAlign: TextAlign.center), ),
+        Center( child: _isSubmitting ? CircularProgressIndicator() : ElevatedButton.icon( icon: Icon(Icons.save), label: Text('Submit Entry'), onPressed: _submitJournalEntry, style: ElevatedButton.styleFrom( padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15), textStyle: TextStyle(fontSize: 16), ), ), ),
+        SizedBox(height: 20),
+      ], ), ), ), );
   }
 }
-class AddPurchaseJournalEntryPage extends StatelessWidget {
+
+// ================================================================
+// ADD PURCHASE JOURNAL ENTRY PAGE (Corrected)
+// ================================================================
+class AddPurchaseJournalEntryPage extends StatefulWidget { // Added StatefulWidget definition
+  @override
+  _AddPurchaseJournalEntryPageState createState() => _AddPurchaseJournalEntryPageState();
+}
+
+class _AddPurchaseJournalEntryPageState extends State<AddPurchaseJournalEntryPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _descriptionController = TextEditingController();
+  final _valueController = TextEditingController();
+  final _valueDiscController = TextEditingController(); // Controller for Discount Value
+
+  DateTime? _selectedDate;
+  List<Account> _accountsList = [];
+  Account? _selectedDebitAccount;
+  Account? _selectedCreditAccount;
+  Account? _selectedDebitAccountDisc;  // State for Debit Discount Account
+  Account? _selectedCreditAccountDisc; // State for Credit Discount Account
+
+  bool _isLoadingAccounts = true;
+  String? _accountError;
+  bool _isSubmitting = false;
+  String? _submitError;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAccounts();
+    _selectedDate = DateTime.now();
+  }
+
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    _valueController.dispose();
+    _valueDiscController.dispose(); // Dispose discount controller
+    super.dispose();
+  }
+
+  // --- Fetch Accounts (No changes needed here) ---
+  Future<void> _fetchAccounts() async {
+    if (!mounted) return; setState(() { _isLoadingAccounts = true; _accountError = null; }); try { SharedPreferences prefs = await SharedPreferences.getInstance(); String? token = prefs.getString('auth_token'); if (token == null || token.isEmpty) { throw Exception('Authentication required.'); } final url = Uri.parse('$baseUrl/api/API/getddAccount'); final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', }; final response = await http.get(url, headers: headers).timeout(Duration(seconds: 30)); if (!mounted) return; if (response.statusCode == 200) { final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes)); setState(() { _accountsList = data.map((jsonItem) => Account.fromJson(jsonItem)).toList(); _isLoadingAccounts = false; }); } else { throw Exception('Failed to load accounts. Status Code: ${response.statusCode}'); } } on TimeoutException { _accountError = "Fetching accounts timed out."; } on http.ClientException catch (e) { _accountError = "Network error fetching accounts: ${e.message}."; } catch (e) { print("Error fetching accounts: $e"); _accountError = "An error occurred fetching accounts: ${e.toString()}"; } finally { if (mounted) { setState(() { _isLoadingAccounts = false; }); } }
+  }
+
+  // --- Select Date (No changes needed here) ---
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker( context: context, initialDate: _selectedDate ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2101), ); if (picked != null && picked != _selectedDate && mounted) { setState(() { _selectedDate = picked; }); }
+  }
+
+  // --- Submit Journal Entry (CORRECTED Validation & Parsing) ---
+  Future<void> _submitJournalEntry() async {
+    if (!_formKey.currentState!.validate()) { return; }
+
+    // Basic validation
+    if (_selectedDate == null || _selectedDebitAccount == null || _selectedCreditAccount == null) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please fill Date, Debit Account, and Credit Account.'), backgroundColor: Colors.orange));
+      return;
+    }
+    // Check if main accounts are the same
+    if (_selectedDebitAccount!.accountNo == _selectedCreditAccount!.accountNo) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Main Debit and Credit accounts cannot be the same.'), backgroundColor: Colors.orange));
+      return;
+    }
+
+    // --- ADDED: Validation for Discount Accounts (if selected) ---
+    // Modify this logic if discount accounts are *required* even if discount amount is 0
+    bool hasDiscountAmount = _valueDiscController.text.replaceAll('.', '').isNotEmpty && double.tryParse(_valueDiscController.text.replaceAll('.', '')) != 0;
+    if (hasDiscountAmount) {
+      if (_selectedDebitAccountDisc == null || _selectedCreditAccountDisc == null) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please select both Debit and Credit Discount accounts if entering a discount value.'), backgroundColor: Colors.orange));
+        return;
+      }
+      if (_selectedDebitAccountDisc!.accountNo == _selectedCreditAccountDisc!.accountNo) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Discount Debit and Credit accounts cannot be the same.'), backgroundColor: Colors.orange));
+        return;
+      }
+      // Optional: Check if discount accounts conflict with main accounts
+      // if (_selectedDebitAccountDisc!.accountNo == _selectedDebitAccount!.accountNo || ... etc) { ... }
+    }
+    // ----------------------------------------------------------
+
+    setState(() { _isSubmitting = true; _submitError = null; });
+
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty) { throw Exception('Authentication required.'); }
+
+      final String formattedDate = DateFormat("yyyy-MM-dd").format(_selectedDate!);
+      final String description = _descriptionController.text;
+      final int debitAccountNo = _selectedDebitAccount!.accountNo;
+      final int creditAccountNo = _selectedCreditAccount!.accountNo;
+
+      // --- CORRECTED: Use correct controller for discount value ---
+      final String valueString = _valueController.text.replaceAll('.', '');
+      final String valueDiscString = _valueDiscController.text.replaceAll('.', ''); // Use discount controller
+      // --------------------------------------------------------
+
+      final double? amount = double.tryParse(valueString);
+      // Parse discount, default to 0.0 if empty or invalid
+      final double amountdisc = double.tryParse(valueDiscString) ?? 0.0;
+
+      if (amount == null || amount <= 0) {
+        // Keep validation for the main value
+        throw Exception('Invalid or zero amount entered for Value.');
+      }
+
+      // Convert to int for the body
+      final int amountInt = amount.toInt();
+      final int amountdiscInt = amountdisc.toInt();
+
+      // Handle null discount accounts if amount is zero (send 0 or null based on API needs)
+      // Sending 0 if not selected and amount is 0 might be safer if API expects the fields
+      final int debitAccountNoDisc = (amountdiscInt != 0 && _selectedDebitAccountDisc != null) ? _selectedDebitAccountDisc!.accountNo : 0; // Or handle null if API allows
+      final int creditAccountNoDisc = (amountdiscInt != 0 && _selectedCreditAccountDisc != null) ? _selectedCreditAccountDisc!.accountNo : 0;// Or handle null if API allows
+
+      // Prepare body, ensure keys match API ('Value_Disc', 'Akun_Debit_disc' etc.)
+      final body = json.encode({
+        "TransDate": formattedDate,
+        "Description": description,
+        "Akun_Debit": debitAccountNo,
+        "Akun_Credit": creditAccountNo,
+        // Use names consistent with your API expectation
+        "Akun_Debit_disc": debitAccountNoDisc,
+        "Akun_Credit_disc": creditAccountNoDisc,
+        "Value": amountInt,
+        "Value_Disc": amountdiscInt,
+      });
+
+      final url = Uri.parse('$baseUrl/api/API/SubmitJPB');
+      final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', };
+      print("Submitting JPB: $body");
+
+      final response = await http.post(url, headers: headers, body: body).timeout(Duration(seconds: 30));
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print("Submit Success: ${response.body}");
+        ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text('Purchase Journal entry submitted successfully!'), backgroundColor: Colors.green), );
+        Navigator.pop(context, true);
+      } else {
+        String serverMessage = response.reasonPhrase ?? 'Submission Failed';
+        try { var errorData = json.decode(response.body); serverMessage = errorData['message'] ?? errorData['title'] ?? errorData['error'] ?? serverMessage; } catch(_) { /* Ignore */ }
+        print("Submit Failed Body: ${response.body}");
+        throw Exception('Failed to submit entry. Server Response: ${response.statusCode} - $serverMessage');
+      }
+    } on TimeoutException { _submitError = "Submission request timed out.";
+    } on http.ClientException catch (e) { _submitError = "Network error during submission: ${e.message}.";
+    } catch (e) { print("Error submitting purchase journal entry: $e"); _submitError = "An error occurred during submission: ${e.toString()}";
+    } finally { if (mounted) { setState(() { _isSubmitting = false; }); } }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Add Purchase Journal Entry')),
-      body: Center(child: Text('Form to add new Purchase entry will be here.')),
-    );
+      // --- Correct AppBar Title ---
+      appBar: AppBar(title: Text('Add Purchase Journal')),
+      // --------------------------
+      body: SingleChildScrollView( padding: const EdgeInsets.all(16.0), child: Form( key: _formKey, child: Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // --- Date (No changes) ---
+        Text('Transaction Date:', style: Theme.of(context).textTheme.titleMedium), SizedBox(height: 8),
+        InkWell( onTap: () => _selectDate(context), child: InputDecorator( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), suffixIcon: Icon(Icons.calendar_today), ), child: Text( _selectedDate == null ? 'Select Date' : DateFormat('dd MMM yyyy').format(_selectedDate!), style: TextStyle(fontSize: 16), ), ), ),
+        SizedBox(height: 16),
+        // --- Description (No changes) ---
+        TextFormField( controller: _descriptionController, decoration: InputDecoration( labelText: 'Description', border: OutlineInputBorder(), hintText: 'Enter transaction description', ), maxLines: 2, textCapitalization: TextCapitalization.sentences, validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter a description.'; } return null; }, ),
+        SizedBox(height: 16),
+        // --- Accounts Loading/Error (No changes) ---
+        if (_isLoadingAccounts) Center(child: Padding(padding: const EdgeInsets.all(8.0), child: CircularProgressIndicator()))
+        else if (_accountError != null) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0), child: Text('Error loading accounts: $_accountError', style: TextStyle(color: Colors.red)), )
+        else ...[
+            // --- Main Debit/Credit Dropdowns (No changes) ---
+            DropdownButtonFormField<Account>( value: _selectedDebitAccount, isExpanded: true, decoration: InputDecoration( labelText: 'Debit Account', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ), hint: Text('Select Debit Account'), items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(), onChanged: (Account? newValue) { setState(() { _selectedDebitAccount = newValue; }); }, validator: (value) => value == null ? 'Please select a debit account.' : null, ),
+            SizedBox(height: 16),
+            DropdownButtonFormField<Account>( value: _selectedCreditAccount, isExpanded: true, decoration: InputDecoration( labelText: 'Credit Account', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ), hint: Text('Select Credit Account'), items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(), onChanged: (Account? newValue) { setState(() { _selectedCreditAccount = newValue; }); }, validator: (value) => value == null ? 'Please select a credit account.' : null, ),
+            SizedBox(height: 16),
+            // --- Discount Debit Account Dropdown (CORRECTED onChanged) ---
+            DropdownButtonFormField<Account>(
+              value: _selectedDebitAccountDisc,
+              isExpanded: true,
+              decoration: InputDecoration( labelText: 'Debit Disc Account (Optional)', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ),
+              hint: Text('Select Debit Disc Account'),
+              items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(),
+              // --- CORRECTED setState ---
+              onChanged: (Account? newValue) { setState(() { _selectedDebitAccountDisc = newValue; }); },
+              // No validator, assuming optional
+            ),
+            SizedBox(height: 16),
+            // --- Discount Credit Account Dropdown (CORRECTED onChanged) ---
+            DropdownButtonFormField<Account>(
+              value: _selectedCreditAccountDisc,
+              isExpanded: true,
+              decoration: InputDecoration( labelText: 'Credit Disc Account (Optional)', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ),
+              hint: Text('Select Credit Disc Account'),
+              items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(),
+              // --- CORRECTED setState ---
+              onChanged: (Account? newValue) { setState(() { _selectedCreditAccountDisc = newValue; }); },
+              // No validator, assuming optional
+            ),
+            SizedBox(height: 16),
+          ],
+        // --- Main Value Input ---
+        TextFormField(
+          controller: _valueController,
+          decoration: InputDecoration( labelText: 'Value', border: OutlineInputBorder(), hintText: 'Enter amount', ),
+          keyboardType: TextInputType.number,
+          inputFormatters: [ ThousandsFormatter(), ],
+          validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter an amount for Value.'; } final cleanedValue = value.replaceAll('.', ''); final number = double.tryParse(cleanedValue); if (number == null || number <= 0) { return 'Please enter a valid positive amount for Value.'; } return null; },
+        ),
+        SizedBox(height: 16), // Adjusted spacing
+
+        // --- Discount Value Input (Optional) ---
+        TextFormField(
+          controller: _valueDiscController, // Use correct controller
+          decoration: InputDecoration( labelText: 'Value Disc (Optional)', border: OutlineInputBorder(), hintText: 'Enter discount amount', ),
+          keyboardType: TextInputType.number,
+          inputFormatters: [ ThousandsFormatter(), ],
+          // --- REMOVED Validator to make it optional ---
+          // validator: (value) { ... },
+        ),
+        SizedBox(height: 24),
+
+        if (_submitError != null) Padding( padding: const EdgeInsets.only(bottom: 12.0), child: Text(_submitError!, style: TextStyle(color: Colors.red), textAlign: TextAlign.center), ),
+        Center( child: _isSubmitting ? CircularProgressIndicator() : ElevatedButton.icon( icon: Icon(Icons.save), label: Text('Submit Entry'), onPressed: _submitJournalEntry, style: ElevatedButton.styleFrom( padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15), textStyle: TextStyle(fontSize: 16), ), ), ),
+        SizedBox(height: 20),
+      ], ), ), ), );
   }
 }
+// ================================================================
+// END OF ADD PURCHASE JOURNAL ENTRY PAGE
+// ================================================================
+
 class AddMemorialJournalEntryPage extends StatefulWidget {
   @override
   _AddMemorialJournalEntryPageState createState() => _AddMemorialJournalEntryPageState();
