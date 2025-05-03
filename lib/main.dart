@@ -6,7 +6,7 @@ import 'dart:async'; // Should be here
 import 'package:intl/intl.dart'; // Should be here
 import 'package:flutter/services.dart'; // <--- Correct position
 import 'dart:math'; // <--- Correct position (needed for previous numbered pagination, keep if might reuse)
-
+import 'package:dropdown_search/dropdown_search.dart';
 // --- Define your Base URL ---
 const String baseUrl = 'http://192.168.100.176:13080/'; // ADJUST AS NEEDED
 
@@ -745,76 +745,132 @@ class _AddSalesJournalEntryPageState extends State<AddSalesJournalEntryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // --- Correct AppBar Title ---
-      appBar: AppBar(title: Text('Add Sales Journal')),
-      // --------------------------
-      body: SingleChildScrollView( padding: const EdgeInsets.all(16.0), child: Form( key: _formKey, child: Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // --- Date (No changes) ---
-        Text('Transaction Date:', style: Theme.of(context).textTheme.titleMedium), SizedBox(height: 8),
-        InkWell( onTap: () => _selectDate(context), child: InputDecorator( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), suffixIcon: Icon(Icons.calendar_today), ), child: Text( _selectedDate == null ? 'Select Date' : DateFormat('dd MMM yyyy').format(_selectedDate!), style: TextStyle(fontSize: 16), ), ), ),
-        SizedBox(height: 16),
-        // --- Description (No changes) ---
-        TextFormField( controller: _descriptionController, decoration: InputDecoration( labelText: 'Description', border: OutlineInputBorder(), hintText: 'Enter transaction description', ), maxLines: 2, textCapitalization: TextCapitalization.sentences, validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter a description.'; } return null; }, ),
-        SizedBox(height: 16),
-        // --- Accounts Loading/Error (No changes) ---
-        if (_isLoadingAccounts) Center(child: Padding(padding: const EdgeInsets.all(8.0), child: CircularProgressIndicator()))
-        else if (_accountError != null) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0), child: Text('Error loading accounts: $_accountError', style: TextStyle(color: Colors.red)), )
-        else ...[
-            // --- Main Debit/Credit Dropdowns (No changes) ---
-            DropdownButtonFormField<Account>( value: _selectedDebitAccount, isExpanded: true, decoration: InputDecoration( labelText: 'Debit Account', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ), hint: Text('Select Debit Account'), items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(), onChanged: (Account? newValue) { setState(() { _selectedDebitAccount = newValue; }); }, validator: (value) => value == null ? 'Please select a debit account.' : null, ),
-            SizedBox(height: 16),
-            DropdownButtonFormField<Account>( value: _selectedCreditAccount, isExpanded: true, decoration: InputDecoration( labelText: 'Credit Account', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ), hint: Text('Select Credit Account'), items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(), onChanged: (Account? newValue) { setState(() { _selectedCreditAccount = newValue; }); }, validator: (value) => value == null ? 'Please select a credit account.' : null, ),
-            SizedBox(height: 16),
-            // --- Discount Debit Account Dropdown (CORRECTED onChanged) ---
-            DropdownButtonFormField<Account>(
-              value: _selectedDebitAccountDisc,
-              isExpanded: true,
-              decoration: InputDecoration( labelText: 'Debit Disc Account (Optional)', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ),
-              hint: Text('Select Debit Disc Account'),
-              items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(),
-              // --- CORRECTED setState ---
-              onChanged: (Account? newValue) { setState(() { _selectedDebitAccountDisc = newValue; }); },
-              // No validator, assuming optional
-            ),
-            SizedBox(height: 16),
-            // --- Discount Credit Account Dropdown (CORRECTED onChanged) ---
-            DropdownButtonFormField<Account>(
-              value: _selectedCreditAccountDisc,
-              isExpanded: true,
-              decoration: InputDecoration( labelText: 'Credit Disc Account (Optional)', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ),
-              hint: Text('Select Credit Disc Account'),
-              items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(),
-              // --- CORRECTED setState ---
-              onChanged: (Account? newValue) { setState(() { _selectedCreditAccountDisc = newValue; }); },
-              // No validator, assuming optional
-            ),
-            SizedBox(height: 16),
-          ],
-        // --- Main Value Input ---
-        TextFormField(
-          controller: _valueController,
-          decoration: InputDecoration( labelText: 'Value', border: OutlineInputBorder(), hintText: 'Enter amount', ),
-          keyboardType: TextInputType.number,
-          inputFormatters: [ ThousandsFormatter(), ],
-          validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter an amount for Value.'; } final cleanedValue = value.replaceAll('.', ''); final number = double.tryParse(cleanedValue); if (number == null || number <= 0) { return 'Please enter a valid positive amount for Value.'; } return null; },
-        ),
-        SizedBox(height: 16), // Adjusted spacing
+      appBar: AppBar(title: Text('Add Purchase Journal')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // --- Date Selection (No changes) ---
+              Text('Transaction Date:', style: Theme.of(context).textTheme.titleMedium), SizedBox(height: 8),
+              InkWell( onTap: () => _selectDate(context), child: InputDecorator( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), suffixIcon: Icon(Icons.calendar_today), ), child: Text( _selectedDate == null ? 'Select Date' : DateFormat('dd MMM yyyy').format(_selectedDate!), style: TextStyle(fontSize: 16), ), ), ),
+              SizedBox(height: 16),
 
-        // --- Discount Value Input (Optional) ---
-        TextFormField(
-          controller: _valueDiscController, // Use correct controller
-          decoration: InputDecoration( labelText: 'Value Disc (Optional)', border: OutlineInputBorder(), hintText: 'Enter discount amount', ),
-          keyboardType: TextInputType.number,
-          inputFormatters: [ ThousandsFormatter(), ],
-          // --- REMOVED Validator to make it optional ---
-          // validator: (value) { ... },
-        ),
-        SizedBox(height: 24),
+              // --- Description Input (No changes) ---
+              TextFormField( controller: _descriptionController, decoration: InputDecoration( labelText: 'Description', border: OutlineInputBorder(), hintText: 'Enter transaction description', ), maxLines: 2, textCapitalization: TextCapitalization.sentences, validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter a description.'; } return null; }, ),
+              SizedBox(height: 16),
 
-        if (_submitError != null) Padding( padding: const EdgeInsets.only(bottom: 12.0), child: Text(_submitError!, style: TextStyle(color: Colors.red), textAlign: TextAlign.center), ),
-        Center( child: _isSubmitting ? CircularProgressIndicator() : ElevatedButton.icon( icon: Icon(Icons.save), label: Text('Submit Entry'), onPressed: _submitJournalEntry, style: ElevatedButton.styleFrom( padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15), textStyle: TextStyle(fontSize: 16), ), ), ),
-        SizedBox(height: 20),
-      ], ), ), ), );
+              // --- Accounts Loading/Error State ---
+              if (_isLoadingAccounts) Center(child: Padding(padding: const EdgeInsets.all(8.0), child: CircularProgressIndicator()))
+              else if (_accountError != null) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0), child: Text('Error loading accounts: $_accountError', style: TextStyle(color: Colors.red)), )
+              else ...[
+                  // --- Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                  DropdownSearch<Account>(
+                    items: _accountsList,
+                    selectedItem: _selectedDebitAccount,
+                    itemAsString: (Account acc) => acc.accountName, // Display name
+                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                    dropdownDecoratorProps: DropDownDecoratorProps(
+                      dropdownSearchDecoration: InputDecoration( labelText: "Debit Account", hintText: "Select Debit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                    ),
+                    popupProps: PopupProps.menu(
+                      showSearchBox: true, // Keep search box enabled
+                      searchFieldProps: TextFieldProps(
+                        decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), // Simplified hint
+                        autofocus: true,
+                      ),
+                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
+                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                      menuProps: MenuProps(),
+                    ),
+                    onChanged: (Account? newValue) { setState(() { _selectedDebitAccount = newValue; }); },
+                    validator: (value) => value == null ? 'Please select a debit account.' : null,
+                  ),
+                  SizedBox(height: 16),
+
+                  // --- Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                  DropdownSearch<Account>(
+                    items: _accountsList,
+                    selectedItem: _selectedCreditAccount,
+                    itemAsString: (Account acc) => acc.accountName,
+                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                    dropdownDecoratorProps: DropDownDecoratorProps(
+                      dropdownSearchDecoration: InputDecoration( labelText: "Credit Account", hintText: "Select Credit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                    ),
+                    popupProps: PopupProps.menu(
+                      showSearchBox: true,
+                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
+                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
+                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                      menuProps: MenuProps(),
+                    ),
+                    onChanged: (Account? newValue) { setState(() { _selectedCreditAccount = newValue; }); },
+                    validator: (value) => value == null ? 'Please select a credit account.' : null,
+                  ),
+                  SizedBox(height: 16),
+
+                  // --- Discount Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                  DropdownSearch<Account>(
+                    items: _accountsList,
+                    selectedItem: _selectedDebitAccountDisc,
+                    itemAsString: (Account acc) => acc.accountName,
+                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                    dropdownDecoratorProps: DropDownDecoratorProps(
+                      dropdownSearchDecoration: InputDecoration( labelText: "Debit Disc Account (Optional)", hintText: "Select Debit Disc Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                    ),
+                    popupProps: PopupProps.menu(
+                      showSearchBox: true,
+                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
+                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
+                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                      menuProps: MenuProps(),
+                    ),
+                    onChanged: (Account? newValue) { setState(() { _selectedDebitAccountDisc = newValue; }); },
+                    // No validator - optional field
+                  ),
+                  SizedBox(height: 16),
+
+                  // --- Discount Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                  DropdownSearch<Account>(
+                    items: _accountsList,
+                    selectedItem: _selectedCreditAccountDisc,
+                    itemAsString: (Account acc) => acc.accountName,
+                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                    dropdownDecoratorProps: DropDownDecoratorProps(
+                      dropdownSearchDecoration: InputDecoration( labelText: "Credit Disc Account (Optional)", hintText: "Select Credit Disc Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                    ),
+                    popupProps: PopupProps.menu(
+                      showSearchBox: true,
+                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
+                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
+                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                      menuProps: MenuProps(),
+                    ),
+                    onChanged: (Account? newValue) { setState(() { _selectedCreditAccountDisc = newValue; }); },
+                    // No validator - optional field
+                  ),
+                  SizedBox(height: 16),
+                ],
+
+              // --- Value Input (No changes) ---
+              TextFormField( controller: _valueController, decoration: InputDecoration( labelText: 'Value', border: OutlineInputBorder(), hintText: 'Enter amount', ), keyboardType: TextInputType.number, inputFormatters: [ ThousandsFormatter(), ], validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter an amount for Value.'; } final cleanedValue = value.replaceAll('.', ''); final number = double.tryParse(cleanedValue); if (number == null || number <= 0) { return 'Please enter a valid positive amount for Value.'; } return null; }, ),
+              SizedBox(height: 16),
+
+              // --- Discount Value Input (No changes) ---
+              TextFormField( controller: _valueDiscController, decoration: InputDecoration( labelText: 'Value Disc (Optional)', border: OutlineInputBorder(), hintText: 'Enter discount amount', ), keyboardType: TextInputType.number, inputFormatters: [ ThousandsFormatter(), ], ),
+              SizedBox(height: 24),
+
+              // --- Submission Error / Button (No changes) ---
+              if (_submitError != null) Padding( padding: const EdgeInsets.only(bottom: 12.0), child: Text(_submitError!, style: TextStyle(color: Colors.red), textAlign: TextAlign.center), ),
+              Center( child: _isSubmitting ? CircularProgressIndicator() : ElevatedButton.icon( icon: Icon(Icons.save), label: Text('Submit Entry'), onPressed: _submitJournalEntry, style: ElevatedButton.styleFrom( padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15), textStyle: TextStyle(fontSize: 16), ), ), ),
+              SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -976,76 +1032,132 @@ class _AddPurchaseJournalEntryPageState extends State<AddPurchaseJournalEntryPag
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // --- Correct AppBar Title ---
       appBar: AppBar(title: Text('Add Purchase Journal')),
-      // --------------------------
-      body: SingleChildScrollView( padding: const EdgeInsets.all(16.0), child: Form( key: _formKey, child: Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // --- Date (No changes) ---
-        Text('Transaction Date:', style: Theme.of(context).textTheme.titleMedium), SizedBox(height: 8),
-        InkWell( onTap: () => _selectDate(context), child: InputDecorator( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), suffixIcon: Icon(Icons.calendar_today), ), child: Text( _selectedDate == null ? 'Select Date' : DateFormat('dd MMM yyyy').format(_selectedDate!), style: TextStyle(fontSize: 16), ), ), ),
-        SizedBox(height: 16),
-        // --- Description (No changes) ---
-        TextFormField( controller: _descriptionController, decoration: InputDecoration( labelText: 'Description', border: OutlineInputBorder(), hintText: 'Enter transaction description', ), maxLines: 2, textCapitalization: TextCapitalization.sentences, validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter a description.'; } return null; }, ),
-        SizedBox(height: 16),
-        // --- Accounts Loading/Error (No changes) ---
-        if (_isLoadingAccounts) Center(child: Padding(padding: const EdgeInsets.all(8.0), child: CircularProgressIndicator()))
-        else if (_accountError != null) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0), child: Text('Error loading accounts: $_accountError', style: TextStyle(color: Colors.red)), )
-        else ...[
-            // --- Main Debit/Credit Dropdowns (No changes) ---
-            DropdownButtonFormField<Account>( value: _selectedDebitAccount, isExpanded: true, decoration: InputDecoration( labelText: 'Debit Account', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ), hint: Text('Select Debit Account'), items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(), onChanged: (Account? newValue) { setState(() { _selectedDebitAccount = newValue; }); }, validator: (value) => value == null ? 'Please select a debit account.' : null, ),
-            SizedBox(height: 16),
-            DropdownButtonFormField<Account>( value: _selectedCreditAccount, isExpanded: true, decoration: InputDecoration( labelText: 'Credit Account', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ), hint: Text('Select Credit Account'), items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(), onChanged: (Account? newValue) { setState(() { _selectedCreditAccount = newValue; }); }, validator: (value) => value == null ? 'Please select a credit account.' : null, ),
-            SizedBox(height: 16),
-            // --- Discount Debit Account Dropdown (CORRECTED onChanged) ---
-            DropdownButtonFormField<Account>(
-              value: _selectedDebitAccountDisc,
-              isExpanded: true,
-              decoration: InputDecoration( labelText: 'Debit Disc Account (Optional)', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ),
-              hint: Text('Select Debit Disc Account'),
-              items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(),
-              // --- CORRECTED setState ---
-              onChanged: (Account? newValue) { setState(() { _selectedDebitAccountDisc = newValue; }); },
-              // No validator, assuming optional
-            ),
-            SizedBox(height: 16),
-            // --- Discount Credit Account Dropdown (CORRECTED onChanged) ---
-            DropdownButtonFormField<Account>(
-              value: _selectedCreditAccountDisc,
-              isExpanded: true,
-              decoration: InputDecoration( labelText: 'Credit Disc Account (Optional)', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ),
-              hint: Text('Select Credit Disc Account'),
-              items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(),
-              // --- CORRECTED setState ---
-              onChanged: (Account? newValue) { setState(() { _selectedCreditAccountDisc = newValue; }); },
-              // No validator, assuming optional
-            ),
-            SizedBox(height: 16),
-          ],
-        // --- Main Value Input ---
-        TextFormField(
-          controller: _valueController,
-          decoration: InputDecoration( labelText: 'Value', border: OutlineInputBorder(), hintText: 'Enter amount', ),
-          keyboardType: TextInputType.number,
-          inputFormatters: [ ThousandsFormatter(), ],
-          validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter an amount for Value.'; } final cleanedValue = value.replaceAll('.', ''); final number = double.tryParse(cleanedValue); if (number == null || number <= 0) { return 'Please enter a valid positive amount for Value.'; } return null; },
-        ),
-        SizedBox(height: 16), // Adjusted spacing
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // --- Date Selection (No changes) ---
+              Text('Transaction Date:', style: Theme.of(context).textTheme.titleMedium), SizedBox(height: 8),
+              InkWell( onTap: () => _selectDate(context), child: InputDecorator( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), suffixIcon: Icon(Icons.calendar_today), ), child: Text( _selectedDate == null ? 'Select Date' : DateFormat('dd MMM yyyy').format(_selectedDate!), style: TextStyle(fontSize: 16), ), ), ),
+              SizedBox(height: 16),
 
-        // --- Discount Value Input (Optional) ---
-        TextFormField(
-          controller: _valueDiscController, // Use correct controller
-          decoration: InputDecoration( labelText: 'Value Disc (Optional)', border: OutlineInputBorder(), hintText: 'Enter discount amount', ),
-          keyboardType: TextInputType.number,
-          inputFormatters: [ ThousandsFormatter(), ],
-          // --- REMOVED Validator to make it optional ---
-          // validator: (value) { ... },
-        ),
-        SizedBox(height: 24),
+              // --- Description Input (No changes) ---
+              TextFormField( controller: _descriptionController, decoration: InputDecoration( labelText: 'Description', border: OutlineInputBorder(), hintText: 'Enter transaction description', ), maxLines: 2, textCapitalization: TextCapitalization.sentences, validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter a description.'; } return null; }, ),
+              SizedBox(height: 16),
 
-        if (_submitError != null) Padding( padding: const EdgeInsets.only(bottom: 12.0), child: Text(_submitError!, style: TextStyle(color: Colors.red), textAlign: TextAlign.center), ),
-        Center( child: _isSubmitting ? CircularProgressIndicator() : ElevatedButton.icon( icon: Icon(Icons.save), label: Text('Submit Entry'), onPressed: _submitJournalEntry, style: ElevatedButton.styleFrom( padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15), textStyle: TextStyle(fontSize: 16), ), ), ),
-        SizedBox(height: 20),
-      ], ), ), ), );
+              // --- Accounts Loading/Error State ---
+              if (_isLoadingAccounts) Center(child: Padding(padding: const EdgeInsets.all(8.0), child: CircularProgressIndicator()))
+              else if (_accountError != null) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0), child: Text('Error loading accounts: $_accountError', style: TextStyle(color: Colors.red)), )
+              else ...[
+                  // --- Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                  DropdownSearch<Account>(
+                    items: _accountsList,
+                    selectedItem: _selectedDebitAccount,
+                    itemAsString: (Account acc) => acc.accountName, // Display name
+                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                    dropdownDecoratorProps: DropDownDecoratorProps(
+                      dropdownSearchDecoration: InputDecoration( labelText: "Debit Account", hintText: "Select Debit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                    ),
+                    popupProps: PopupProps.menu(
+                      showSearchBox: true, // Keep search box enabled
+                      searchFieldProps: TextFieldProps(
+                        decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), // Simplified hint
+                        autofocus: true,
+                      ),
+                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
+                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                      menuProps: MenuProps(),
+                    ),
+                    onChanged: (Account? newValue) { setState(() { _selectedDebitAccount = newValue; }); },
+                    validator: (value) => value == null ? 'Please select a debit account.' : null,
+                  ),
+                  SizedBox(height: 16),
+
+                  // --- Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                  DropdownSearch<Account>(
+                    items: _accountsList,
+                    selectedItem: _selectedCreditAccount,
+                    itemAsString: (Account acc) => acc.accountName,
+                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                    dropdownDecoratorProps: DropDownDecoratorProps(
+                      dropdownSearchDecoration: InputDecoration( labelText: "Credit Account", hintText: "Select Credit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                    ),
+                    popupProps: PopupProps.menu(
+                      showSearchBox: true,
+                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
+                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
+                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                      menuProps: MenuProps(),
+                    ),
+                    onChanged: (Account? newValue) { setState(() { _selectedCreditAccount = newValue; }); },
+                    validator: (value) => value == null ? 'Please select a credit account.' : null,
+                  ),
+                  SizedBox(height: 16),
+
+                  // --- Discount Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                  DropdownSearch<Account>(
+                    items: _accountsList,
+                    selectedItem: _selectedDebitAccountDisc,
+                    itemAsString: (Account acc) => acc.accountName,
+                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                    dropdownDecoratorProps: DropDownDecoratorProps(
+                      dropdownSearchDecoration: InputDecoration( labelText: "Debit Disc Account (Optional)", hintText: "Select Debit Disc Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                    ),
+                    popupProps: PopupProps.menu(
+                      showSearchBox: true,
+                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
+                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
+                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                      menuProps: MenuProps(),
+                    ),
+                    onChanged: (Account? newValue) { setState(() { _selectedDebitAccountDisc = newValue; }); },
+                    // No validator - optional field
+                  ),
+                  SizedBox(height: 16),
+
+                  // --- Discount Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                  DropdownSearch<Account>(
+                    items: _accountsList,
+                    selectedItem: _selectedCreditAccountDisc,
+                    itemAsString: (Account acc) => acc.accountName,
+                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                    dropdownDecoratorProps: DropDownDecoratorProps(
+                      dropdownSearchDecoration: InputDecoration( labelText: "Credit Disc Account (Optional)", hintText: "Select Credit Disc Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                    ),
+                    popupProps: PopupProps.menu(
+                      showSearchBox: true,
+                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
+                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
+                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                      menuProps: MenuProps(),
+                    ),
+                    onChanged: (Account? newValue) { setState(() { _selectedCreditAccountDisc = newValue; }); },
+                    // No validator - optional field
+                  ),
+                  SizedBox(height: 16),
+                ],
+
+              // --- Value Input (No changes) ---
+              TextFormField( controller: _valueController, decoration: InputDecoration( labelText: 'Value', border: OutlineInputBorder(), hintText: 'Enter amount', ), keyboardType: TextInputType.number, inputFormatters: [ ThousandsFormatter(), ], validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter an amount for Value.'; } final cleanedValue = value.replaceAll('.', ''); final number = double.tryParse(cleanedValue); if (number == null || number <= 0) { return 'Please enter a valid positive amount for Value.'; } return null; }, ),
+              SizedBox(height: 16),
+
+              // --- Discount Value Input (No changes) ---
+              TextFormField( controller: _valueDiscController, decoration: InputDecoration( labelText: 'Value Disc (Optional)', border: OutlineInputBorder(), hintText: 'Enter discount amount', ), keyboardType: TextInputType.number, inputFormatters: [ ThousandsFormatter(), ], ),
+              SizedBox(height: 24),
+
+              // --- Submission Error / Button (No changes) ---
+              if (_submitError != null) Padding( padding: const EdgeInsets.only(bottom: 12.0), child: Text(_submitError!, style: TextStyle(color: Colors.red), textAlign: TextAlign.center), ),
+              Center( child: _isSubmitting ? CircularProgressIndicator() : ElevatedButton.icon( icon: Icon(Icons.save), label: Text('Submit Entry'), onPressed: _submitJournalEntry, style: ElevatedButton.styleFrom( padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15), textStyle: TextStyle(fontSize: 16), ), ), ),
+              SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 // ================================================================
@@ -1184,9 +1296,49 @@ class _AddMemorialJournalEntryPageState extends State<AddMemorialJournalEntryPag
         if (_isLoadingAccounts) Center(child: Padding(padding: const EdgeInsets.all(8.0), child: CircularProgressIndicator()))
         else if (_accountError != null) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0), child: Text('Error loading accounts: $_accountError', style: TextStyle(color: Colors.red)), )
         else ...[
-            DropdownButtonFormField<Account>( value: _selectedDebitAccount, isExpanded: true, decoration: InputDecoration( labelText: 'Debit Account', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ), hint: Text('Select Debit Account'), items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(), onChanged: (Account? newValue) { setState(() { _selectedDebitAccount = newValue; }); }, validator: (value) => value == null ? 'Please select a debit account.' : null, ),
+            // --- Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+            DropdownSearch<Account>(
+              items: _accountsList,
+              selectedItem: _selectedDebitAccount,
+              itemAsString: (Account acc) => acc.accountName, // Display name
+              compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+              dropdownDecoratorProps: DropDownDecoratorProps(
+                dropdownSearchDecoration: InputDecoration( labelText: "Debit Account", hintText: "Select Debit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+              ),
+              popupProps: PopupProps.menu(
+                showSearchBox: true, // Keep search box enabled
+                searchFieldProps: TextFieldProps(
+                  decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), // Simplified hint
+                  autofocus: true,
+                ),
+                itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
+                // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                menuProps: MenuProps(),
+              ),
+              onChanged: (Account? newValue) { setState(() { _selectedDebitAccount = newValue; }); },
+              validator: (value) => value == null ? 'Please select a debit account.' : null,
+            ),
             SizedBox(height: 16),
-            DropdownButtonFormField<Account>( value: _selectedCreditAccount, isExpanded: true, decoration: InputDecoration( labelText: 'Credit Account', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), ), hint: Text('Select Credit Account'), items: _accountsList.map((Account account) { return DropdownMenuItem<Account>( value: account, child: Text(account.accountName, overflow: TextOverflow.ellipsis), ); }).toList(), onChanged: (Account? newValue) { setState(() { _selectedCreditAccount = newValue; }); }, validator: (value) => value == null ? 'Please select a credit account.' : null, ),
+
+            // --- Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+            DropdownSearch<Account>(
+              items: _accountsList,
+              selectedItem: _selectedCreditAccount,
+              itemAsString: (Account acc) => acc.accountName,
+              compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+              dropdownDecoratorProps: DropDownDecoratorProps(
+                dropdownSearchDecoration: InputDecoration( labelText: "Credit Account", hintText: "Select Credit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+              ),
+              popupProps: PopupProps.menu(
+                showSearchBox: true,
+                searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
+                itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
+                // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                menuProps: MenuProps(),
+              ),
+              onChanged: (Account? newValue) { setState(() { _selectedCreditAccount = newValue; }); },
+              validator: (value) => value == null ? 'Please select a credit account.' : null,
+            ),
             SizedBox(height: 16),
           ],
         TextFormField( controller: _amountController, decoration: InputDecoration( labelText: 'Amount (Debit/Credit)', border: OutlineInputBorder(), hintText: 'Enter amount', ),
