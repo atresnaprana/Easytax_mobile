@@ -1,12 +1,18 @@
-import 'package:flutter/material.dart'; // Should be here
-import 'package:shared_preferences/shared_preferences.dart'; // Should be here
-import 'dart:convert'; // Should be here
-import 'package:http/http.dart' as http; // Should be here
-import 'dart:async'; // Should be here
-import 'package:intl/intl.dart'; // Should be here
-import 'package:flutter/services.dart'; // <--- Correct position
-import 'dart:math'; // <--- Correct position (needed for previous numbered pagination, keep if might reuse)
-import 'package:dropdown_search/dropdown_search.dart';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'dart:async';
+import 'package:intl/intl.dart';
+import 'package:flutter/services.dart';
+import 'dart:math';
+import 'dart:io'; // Keep for File, Platform, FileSystemException
+import 'dart:typed_data'; // Keep for Uint8List
+import 'package:path_provider/path_provider.dart'; // Keep for getApplicationDocumentsDirectory
+import 'package:permission_handler/permission_handler.dart'; // Keep for Permission
+import 'package:dropdown_search/dropdown_search.dart'; // Keep if used for Add page
+import 'package:flutter_pdfview/flutter_pdfview.dart';
+
 // --- Define your Base URL ---
 const String baseUrl = 'http://192.168.100.176:13080/'; // ADJUST AS NEEDED
 
@@ -46,7 +52,9 @@ class MemorialJournalEntry {
       if (value is double) return value;
       if (value is int) return value.toDouble();
       if (value is String) {
-        final cleanedValue = value.replaceAll(RegExp(r'[.]'), '').replaceAll(',', '.');
+        final cleanedValue = value
+            .replaceAll(RegExp(r'[.]'), '')
+            .replaceAll(',', '.');
         return double.tryParse(cleanedValue) ?? 0.0;
       }
       return 0.0;
@@ -81,12 +89,14 @@ class PurchaseJournalEntry {
   final String description;
   final int akunDebit;
   final int akunCredit;
-  final int akunDebitdisc; // Note: These might not be used in current display/sort
-  final int akunCreditdisc;// Note: These might not be used in current display/sort
-  final double Value;      // Numeric value for sorting/calculations
-  final double ValueDisc;  // Numeric value for discount sorting/calculations
-  final String ValueStr;   // Formatted string for display
-  final String ValueStrdisc;// Formatted string for display
+  final int
+  akunDebitdisc; // Note: These might not be used in current display/sort
+  final int
+  akunCreditdisc; // Note: These might not be used in current display/sort
+  final double Value; // Numeric value for sorting/calculations
+  final double ValueDisc; // Numeric value for discount sorting/calculations
+  final String ValueStr; // Formatted string for display
+  final String ValueStrdisc; // Formatted string for display
   final String transDateStr;
 
   PurchaseJournalEntry({
@@ -112,7 +122,9 @@ class PurchaseJournalEntry {
       if (value is double) return value;
       if (value is int) return value.toDouble();
       if (value is String) {
-        final cleanedValue = value.replaceAll(RegExp(r'[.]'), '').replaceAll(',', '.');
+        final cleanedValue = value
+            .replaceAll(RegExp(r'[.]'), '')
+            .replaceAll(',', '.');
         return double.tryParse(cleanedValue) ?? 0.0;
       }
       return 0.0;
@@ -129,10 +141,13 @@ class PurchaseJournalEntry {
       akunDebitdisc: json['akun_Debitdisc'] ?? 0, // Check API key
       akunCredit: json['akun_Credit'] ?? 0,
       akunCreditdisc: json['akun_Creditdisc'] ?? 0, // Check API key
-      Value: parseDouble(json['value']),         // Check API key ('value' or 'Value'?)
-      ValueDisc: parseDouble(json['value_Disc']),  // Check API key ('value_Disc' or 'ValueDisc'?)
-      ValueStr: json['valueStr'] ?? '0,00',       // Check API key
-      ValueStrdisc: json['valueDiscStr'] ?? '0,00', // Check API key ('valueDiscStr'?)
+      Value: parseDouble(json['value']), // Check API key ('value' or 'Value'?)
+      ValueDisc: parseDouble(
+        json['value_Disc'],
+      ), // Check API key ('value_Disc' or 'ValueDisc'?)
+      ValueStr: json['valueStr'] ?? '0,00', // Check API key
+      ValueStrdisc:
+          json['valueDiscStr'] ?? '0,00', // Check API key ('valueDiscStr'?)
       transDateStr: json['transDateStr'] ?? '',
     );
   }
@@ -150,12 +165,14 @@ class SalesJournalEntry {
   final String description;
   final int akunDebit;
   final int akunCredit;
-  final int akunDebitdisc; // Note: These might not be used in current display/sort
-  final int akunCreditdisc;// Note: These might not be used in current display/sort
-  final double Value;      // Numeric value for sorting/calculations
-  final double ValueDisc;  // Numeric value for discount sorting/calculations
-  final String ValueStr;   // Formatted string for display
-  final String ValueStrdisc;// Formatted string for display
+  final int
+  akunDebitdisc; // Note: These might not be used in current display/sort
+  final int
+  akunCreditdisc; // Note: These might not be used in current display/sort
+  final double Value; // Numeric value for sorting/calculations
+  final double ValueDisc; // Numeric value for discount sorting/calculations
+  final String ValueStr; // Formatted string for display
+  final String ValueStrdisc; // Formatted string for display
   final String transDateStr;
 
   SalesJournalEntry({
@@ -181,7 +198,9 @@ class SalesJournalEntry {
       if (value is double) return value;
       if (value is int) return value.toDouble();
       if (value is String) {
-        final cleanedValue = value.replaceAll(RegExp(r'[.]'), '').replaceAll(',', '.');
+        final cleanedValue = value
+            .replaceAll(RegExp(r'[.]'), '')
+            .replaceAll(',', '.');
         return double.tryParse(cleanedValue) ?? 0.0;
       }
       return 0.0;
@@ -198,10 +217,13 @@ class SalesJournalEntry {
       akunDebitdisc: json['akun_Debitdisc'] ?? 0, // Check API key
       akunCredit: json['akun_Credit'] ?? 0,
       akunCreditdisc: json['akun_Creditdisc'] ?? 0, // Check API key
-      Value: parseDouble(json['value']),         // Check API key ('value' or 'Value'?)
-      ValueDisc: parseDouble(json['value_Disc']),  // Check API key ('value_Disc' or 'ValueDisc'?)
-      ValueStr: json['valueStr'] ?? '0,00',       // Check API key
-      ValueStrdisc: json['valueDiscStr'] ?? '0,00', // Check API key ('valueDiscStr'?)
+      Value: parseDouble(json['value']), // Check API key ('value' or 'Value'?)
+      ValueDisc: parseDouble(
+        json['value_Disc'],
+      ), // Check API key ('value_Disc' or 'ValueDisc'?)
+      ValueStr: json['valueStr'] ?? '0,00', // Check API key
+      ValueStrdisc:
+          json['valueDiscStr'] ?? '0,00', // Check API key ('valueDiscStr'?)
       transDateStr: json['transDateStr'] ?? '',
     );
   }
@@ -228,7 +250,9 @@ class Account {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is Account && runtimeType == other.runtimeType && accountNo == other.accountNo;
+      other is Account &&
+          runtimeType == other.runtimeType &&
+          accountNo == other.accountNo;
 
   @override
   int get hashCode => accountNo.hashCode;
@@ -239,13 +263,15 @@ class Account {
   }
 }
 
-
 // --- Custom TextInputFormatter ---
 class ThousandsFormatter extends TextInputFormatter {
   static final NumberFormat _formatter = NumberFormat.decimalPattern('id');
 
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     String newText = newValue.text;
     String digitsOnly = newText.replaceAll(RegExp(r'[^\d]'), '');
 
@@ -290,7 +316,9 @@ class MyApp extends StatelessWidget {
 class SplashScreen extends StatelessWidget {
   Future<bool> _checkLoginStatus() async {
     // Keep the delay or adjust as needed
-    await Future.delayed(Duration(seconds: 2)); // Increased delay slightly for logo visibility
+    await Future.delayed(
+      Duration(seconds: 2),
+    ); // Increased delay slightly for logo visibility
     SharedPreferences prefs = await SharedPreferences.getInstance();
     return prefs.getBool('loggedIn') ?? false;
   }
@@ -306,7 +334,8 @@ class SplashScreen extends StatelessWidget {
             // Optional: Set a background color matching your app theme or logo background
             backgroundColor: Colors.white, // Example: white background
             body: Center(
-              child: Column( // Use Column to stack logo and indicator
+              child: Column(
+                // Use Column to stack logo and indicator
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
                   // --- Your Logo ---
@@ -318,7 +347,9 @@ class SplashScreen extends StatelessWidget {
                   SizedBox(height: 24), // Spacing between logo and indicator
                   // --- Optional Loading Indicator ---
                   CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue), // Match your theme
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Colors.blue,
+                    ), // Match your theme
                   ),
                 ],
               ),
@@ -337,14 +368,16 @@ class SplashScreen extends StatelessWidget {
             // Using WidgetsBinding ensures navigation happens after build completes
             WidgetsBinding.instance.addPostFrameCallback((_) {
               Navigator.pushReplacement(
-                context, MaterialPageRoute(builder: (context) => DashboardPage()),
+                context,
+                MaterialPageRoute(builder: (context) => DashboardPage()),
               );
             });
           } else {
             // Navigate to Login
             WidgetsBinding.instance.addPostFrameCallback((_) {
               Navigator.pushReplacement(
-                context, MaterialPageRoute(builder: (context) => LoginPage()),
+                context,
+                MaterialPageRoute(builder: (context) => LoginPage()),
               );
             });
           }
@@ -353,13 +386,16 @@ class SplashScreen extends StatelessWidget {
           // but before navigation occurs.
           return Scaffold(
             backgroundColor: Colors.white, // Match the splash background
-            body: Center(child: CircularProgressIndicator()), // Or just an empty container
+            body: Center(
+              child: CircularProgressIndicator(),
+            ), // Or just an empty container
           );
         }
       },
     );
   }
 }
+
 // --- Login Page ---
 // --- Login Page (with Logo) ---
 class LoginPage extends StatefulWidget {
@@ -383,31 +419,72 @@ class _LoginPageState extends State<LoginPage> {
   void _login() async {
     // ... (login logic remains the same) ...
     if (_isLoading) return;
-    setState(() { _isLoading = true; _error = null; });
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
-    if (username.isEmpty || password.isEmpty) { setState(() { _error = "Username and Password cannot be empty."; _isLoading = false; }); return; }
+    if (username.isEmpty || password.isEmpty) {
+      setState(() {
+        _error = "Username and Password cannot be empty.";
+        _isLoading = false;
+      });
+      return;
+    }
     var headers = {'Content-Type': 'application/json'};
     var request = http.Request('POST', Uri.parse('$baseUrl/api/Auth/login'));
     request.body = json.encode({"username": username, "password": password});
     request.headers.addAll(headers);
     try {
-      http.StreamedResponse responseStream = await request.send().timeout(Duration(seconds: 20));
+      http.StreamedResponse responseStream = await request.send().timeout(
+        Duration(seconds: 20),
+      );
       final response = await http.Response.fromStream(responseStream);
       if (!mounted) return;
       if (response.statusCode == 200) {
-        var data = json.decode(response.body); String? token = data['token'];
+        var data = json.decode(response.body);
+        String? token = data['token'];
         if (token != null && token.isNotEmpty) {
           SharedPreferences prefs = await SharedPreferences.getInstance();
           await prefs.setString('auth_token', token);
           await prefs.setString('userid', username);
           await prefs.setBool('loggedIn', true);
           print("Login successful. Token saved: $token");
-          Navigator.pushReplacement( context, MaterialPageRoute(builder: (context) => DashboardPage()), ); return;
-        } else { _error = "Login successful, but no token received."; }
-      } else { String serverMessage = response.reasonPhrase ?? 'Unknown Error'; try { var errorData = json.decode(response.body); serverMessage = errorData['message'] ?? errorData['error'] ?? serverMessage; } catch(_) { /* Ignore */ } _error = "Login failed: ${response.statusCode} - $serverMessage"; print("Login failed: ${response.statusCode} ${response.reasonPhrase}"); print("Response body: ${response.body}"); }
-    } on TimeoutException { _error = "Login request timed out. Please try again."; } on http.ClientException catch (e) { _error = "Network error: ${e.message}. Please check connection."; } catch (e) { _error = "An unexpected error occurred: ${e.toString()}"; print("Login error: $e"); }
-    if (mounted) { setState(() { _isLoading = false; }); }
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => DashboardPage()),
+          );
+          return;
+        } else {
+          _error = "Login successful, but no token received.";
+        }
+      } else {
+        String serverMessage = response.reasonPhrase ?? 'Unknown Error';
+        try {
+          var errorData = json.decode(response.body);
+          serverMessage =
+              errorData['message'] ?? errorData['error'] ?? serverMessage;
+        } catch (_) {
+          /* Ignore */
+        }
+        _error = "Login failed: ${response.statusCode} - $serverMessage";
+        print("Login failed: ${response.statusCode} ${response.reasonPhrase}");
+        print("Response body: ${response.body}");
+      }
+    } on TimeoutException {
+      _error = "Login request timed out. Please try again.";
+    } on http.ClientException catch (e) {
+      _error = "Network error: ${e.message}. Please check connection.";
+    } catch (e) {
+      _error = "An unexpected error occurred: ${e.toString()}";
+      print("Login error: $e");
+    }
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -415,7 +492,8 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       // Optional: Remove AppBar if the logo makes it redundant
       // appBar: AppBar(title: Text('Login')),
-      body: SafeArea( // Use SafeArea to avoid notch/system intrusions
+      body: SafeArea(
+        // Use SafeArea to avoid notch/system intrusions
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
@@ -429,20 +507,27 @@ class _LoginPageState extends State<LoginPage> {
                   // width: 150,
                 ),
                 SizedBox(height: 24), // Spacing after logo
-
-
-
                 // --- Error Message ---
                 if (_error != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12.0),
-                    child: Text(_error!, style: TextStyle(color: Colors.red, fontSize: 14), textAlign: TextAlign.center),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(color: Colors.red, fontSize: 14),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
 
                 // --- Username Field ---
                 TextField(
                   controller: _usernameController,
-                  decoration: InputDecoration( labelText: 'Username', prefixIcon: Icon(Icons.person), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), ),
+                  decoration: InputDecoration(
+                    labelText: 'Username',
+                    prefixIcon: Icon(Icons.person),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                   keyboardType: TextInputType.text,
                   textInputAction: TextInputAction.next,
                 ),
@@ -452,7 +537,13 @@ class _LoginPageState extends State<LoginPage> {
                 TextField(
                   controller: _passwordController,
                   obscureText: true,
-                  decoration: InputDecoration( labelText: 'Password', prefixIcon: Icon(Icons.lock), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), ),
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    prefixIcon: Icon(Icons.lock),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _login(),
                 ),
@@ -462,14 +553,16 @@ class _LoginPageState extends State<LoginPage> {
                 _isLoading
                     ? CircularProgressIndicator()
                     : ElevatedButton(
-                  onPressed: _login,
-                  child: Text('Login'),
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: Size(double.infinity, 50),
-                    textStyle: TextStyle(fontSize: 18),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
+                      onPressed: _login,
+                      child: Text('Login'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: Size(double.infinity, 50),
+                        textStyle: TextStyle(fontSize: 18),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
               ],
             ),
           ),
@@ -478,6 +571,7 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 }
+
 // --- Dashboard Page ---
 // --- Dashboard Page (with App Logo instead of User Avatar) ---
 class DashboardPage extends StatefulWidget {
@@ -512,7 +606,8 @@ class _DashboardPageState extends State<DashboardPage> {
     if (!mounted) return;
     // Use context available in the State class directly
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => LoginPage()), (Route<dynamic> route) => false,
+      MaterialPageRoute(builder: (context) => LoginPage()),
+      (Route<dynamic> route) => false,
     );
   }
 
@@ -527,16 +622,30 @@ class _DashboardPageState extends State<DashboardPage> {
       borderRadius: BorderRadius.circular(12),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(12),
-          boxShadow: [BoxShadow(color: Colors.grey.shade300, blurRadius: 6, offset: Offset(0, 3))],
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.shade300,
+              blurRadius: 6,
+              offset: Offset(0, 3),
+            ),
+          ],
         ),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(icon, size: 40, color: Theme.of(context).primaryColor),
-          SizedBox(height: 10),
-          Padding( padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Text(label, style: TextStyle(fontSize: 16), textAlign: TextAlign.center),
-          ),
-        ],
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 40, color: Theme.of(context).primaryColor),
+            SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -545,44 +654,75 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Dashboard'), actions: [
-        IconButton(icon: Icon(Icons.logout), tooltip: 'Logout', onPressed: _logout),
-      ],
+      appBar: AppBar(
+        title: Text('Dashboard'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.logout),
+            tooltip: 'Logout',
+            onPressed: _logout,
+          ),
+        ],
       ),
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator())
-          : Column(children: [
-        SizedBox(height: 30), // Adjusted top spacing
+      body:
+          _isLoading
+              ? Center(child: CircularProgressIndicator())
+              : Column(
+                children: [
+                  SizedBox(height: 30), // Adjusted top spacing
+                  // --- REPLACE CircleAvatar with App Logo ---
+                  Image.asset(
+                    'assets/easytaxlandscape.png', // <-- *** REPLACE WITH YOUR LOGO PATH ***
+                    height: 110, // Adjust size as needed for dashboard
+                    // width: 150, // Optional: Set width if needed
+                  ),
 
-        // --- REPLACE CircleAvatar with App Logo ---
-        Image.asset(
-          'assets/easytaxlandscape.png', // <-- *** REPLACE WITH YOUR LOGO PATH ***
-          height: 110, // Adjust size as needed for dashboard
-          // width: 150, // Optional: Set width if needed
-        ),
-        // -----------------------------------------
-
-        SizedBox(height: 15), // Adjusted spacing after logo
-
-        // --- Keep User Identifier Text ---
-        Text(_userIdentifier ?? 'User', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        SizedBox(height: 25), // Adjusted spacing before grid
-
-        // --- Grid View remains the same ---
-        Expanded( child: GridView.count(
-          crossAxisCount: 2, padding: EdgeInsets.all(16),
-          crossAxisSpacing: 16, mainAxisSpacing: 16,
-          children: [
-            _buildTile(Icons.book_outlined, 'Memorial Journal', MemorialJournalPage()),
-            _buildTile(Icons.receipt_long_outlined, 'Sales Journal', SalesJournalPage()),
-            _buildTile(Icons.shopping_cart_outlined, 'Purchasing Journal', PurchasingJournalPage()),
-            _buildTile(Icons.download_for_offline_outlined, 'Download Report', DownloadReportPage()),
-            _buildTile(Icons.admin_panel_settings_outlined, 'Admin Menu', AdminMenuPage()),
-          ],
-        ),
-        ),
-      ],
-      ),
+                  // -----------------------------------------
+                  SizedBox(height: 15), // Adjusted spacing after logo
+                  // --- Keep User Identifier Text ---
+                  Text(
+                    _userIdentifier ?? 'User',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 25), // Adjusted spacing before grid
+                  // --- Grid View remains the same ---
+                  Expanded(
+                    child: GridView.count(
+                      crossAxisCount: 2,
+                      padding: EdgeInsets.all(16),
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      children: [
+                        _buildTile(
+                          Icons.book_outlined,
+                          'Memorial Journal',
+                          MemorialJournalPage(),
+                        ),
+                        _buildTile(
+                          Icons.receipt_long_outlined,
+                          'Sales Journal',
+                          SalesJournalPage(),
+                        ),
+                        _buildTile(
+                          Icons.shopping_cart_outlined,
+                          'Purchasing Journal',
+                          PurchasingJournalPage(),
+                        ),
+                        _buildTile(
+                          Icons.download_for_offline_outlined,
+                          'Download Report',
+                          DownloadReportPage(),
+                        ),
+                        _buildTile(
+                          Icons.admin_panel_settings_outlined,
+                          'Admin Menu',
+                          AdminMenuPage(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
     );
   }
 }
@@ -590,22 +730,25 @@ class _DashboardPageState extends State<DashboardPage> {
 // ================================================================
 // ADD MEMORIAL JOURNAL ENTRY PAGE
 // ================================================================
-class AddSalesJournalEntryPage extends StatefulWidget { // Added StatefulWidget definition
+class AddSalesJournalEntryPage extends StatefulWidget {
+  // Added StatefulWidget definition
   @override
-  _AddSalesJournalEntryPageState createState() => _AddSalesJournalEntryPageState();
+  _AddSalesJournalEntryPageState createState() =>
+      _AddSalesJournalEntryPageState();
 }
 
 class _AddSalesJournalEntryPageState extends State<AddSalesJournalEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _valueController = TextEditingController();
-  final _valueDiscController = TextEditingController(); // Controller for Discount Value
+  final _valueDiscController =
+      TextEditingController(); // Controller for Discount Value
 
   DateTime? _selectedDate;
   List<Account> _accountsList = [];
   Account? _selectedDebitAccount;
   Account? _selectedCreditAccount;
-  Account? _selectedDebitAccountDisc;  // State for Debit Discount Account
+  Account? _selectedDebitAccountDisc; // State for Debit Discount Account
   Account? _selectedCreditAccountDisc; // State for Credit Discount Account
 
   bool _isLoadingAccounts = true;
@@ -630,39 +773,132 @@ class _AddSalesJournalEntryPageState extends State<AddSalesJournalEntryPage> {
 
   // --- Fetch Accounts (No changes needed here) ---
   Future<void> _fetchAccounts() async {
-    if (!mounted) return; setState(() { _isLoadingAccounts = true; _accountError = null; }); try { SharedPreferences prefs = await SharedPreferences.getInstance(); String? token = prefs.getString('auth_token'); if (token == null || token.isEmpty) { throw Exception('Authentication required.'); } final url = Uri.parse('$baseUrl/api/API/getddAccount'); final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', }; final response = await http.get(url, headers: headers).timeout(Duration(seconds: 30)); if (!mounted) return; if (response.statusCode == 200) { final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes)); setState(() { _accountsList = data.map((jsonItem) => Account.fromJson(jsonItem)).toList(); _isLoadingAccounts = false; }); } else { throw Exception('Failed to load accounts. Status Code: ${response.statusCode}'); } } on TimeoutException { _accountError = "Fetching accounts timed out."; } on http.ClientException catch (e) { _accountError = "Network error fetching accounts: ${e.message}."; } catch (e) { print("Error fetching accounts: $e"); _accountError = "An error occurred fetching accounts: ${e.toString()}"; } finally { if (mounted) { setState(() { _isLoadingAccounts = false; }); } }
+    if (!mounted) return;
+    setState(() {
+      _isLoadingAccounts = true;
+      _accountError = null;
+    });
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required.');
+      }
+      final url = Uri.parse('$baseUrl/api/API/getddAccount');
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(Duration(seconds: 30));
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        setState(() {
+          _accountsList =
+              data.map((jsonItem) => Account.fromJson(jsonItem)).toList();
+          _isLoadingAccounts = false;
+        });
+      } else {
+        throw Exception(
+          'Failed to load accounts. Status Code: ${response.statusCode}',
+        );
+      }
+    } on TimeoutException {
+      _accountError = "Fetching accounts timed out.";
+    } on http.ClientException catch (e) {
+      _accountError = "Network error fetching accounts: ${e.message}.";
+    } catch (e) {
+      print("Error fetching accounts: $e");
+      _accountError = "An error occurred fetching accounts: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingAccounts = false;
+        });
+      }
+    }
   }
 
   // --- Select Date (No changes needed here) ---
   Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker( context: context, initialDate: _selectedDate ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2101), ); if (picked != null && picked != _selectedDate && mounted) { setState(() { _selectedDate = picked; }); }
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null && picked != _selectedDate && mounted) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
   }
 
   // --- Submit Journal Entry (CORRECTED Validation & Parsing) ---
   Future<void> _submitJournalEntry() async {
-    if (!_formKey.currentState!.validate()) { return; }
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
     // Basic validation
-    if (_selectedDate == null || _selectedDebitAccount == null || _selectedCreditAccount == null) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please fill Date, Debit Account, and Credit Account.'), backgroundColor: Colors.orange));
+    if (_selectedDate == null ||
+        _selectedDebitAccount == null ||
+        _selectedCreditAccount == null) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Please fill Date, Debit Account, and Credit Account.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
       return;
     }
     // Check if main accounts are the same
     if (_selectedDebitAccount!.accountNo == _selectedCreditAccount!.accountNo) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Main Debit and Credit accounts cannot be the same.'), backgroundColor: Colors.orange));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Main Debit and Credit accounts cannot be the same.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
       return;
     }
 
     // --- ADDED: Validation for Discount Accounts (if selected) ---
     // Modify this logic if discount accounts are *required* even if discount amount is 0
-    bool hasDiscountAmount = _valueDiscController.text.replaceAll('.', '').isNotEmpty && double.tryParse(_valueDiscController.text.replaceAll('.', '')) != 0;
+    bool hasDiscountAmount =
+        _valueDiscController.text.replaceAll('.', '').isNotEmpty &&
+        double.tryParse(_valueDiscController.text.replaceAll('.', '')) != 0;
     if (hasDiscountAmount) {
-      if (_selectedDebitAccountDisc == null || _selectedCreditAccountDisc == null) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please select both Debit and Credit Discount accounts if entering a discount value.'), backgroundColor: Colors.orange));
+      if (_selectedDebitAccountDisc == null ||
+          _selectedCreditAccountDisc == null) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Please select both Debit and Credit Discount accounts if entering a discount value.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
         return;
       }
-      if (_selectedDebitAccountDisc!.accountNo == _selectedCreditAccountDisc!.accountNo) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Discount Debit and Credit accounts cannot be the same.'), backgroundColor: Colors.orange));
+      if (_selectedDebitAccountDisc!.accountNo ==
+          _selectedCreditAccountDisc!.accountNo) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Discount Debit and Credit accounts cannot be the same.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
         return;
       }
       // Optional: Check if discount accounts conflict with main accounts
@@ -670,21 +906,31 @@ class _AddSalesJournalEntryPageState extends State<AddSalesJournalEntryPage> {
     }
     // ----------------------------------------------------------
 
-    setState(() { _isSubmitting = true; _submitError = null; });
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
 
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('auth_token');
-      if (token == null || token.isEmpty) { throw Exception('Authentication required.'); }
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required.');
+      }
 
-      final String formattedDate = DateFormat("yyyy-MM-dd").format(_selectedDate!);
+      final String formattedDate = DateFormat(
+        "yyyy-MM-dd",
+      ).format(_selectedDate!);
       final String description = _descriptionController.text;
       final int debitAccountNo = _selectedDebitAccount!.accountNo;
       final int creditAccountNo = _selectedCreditAccount!.accountNo;
 
       // --- CORRECTED: Use correct controller for discount value ---
       final String valueString = _valueController.text.replaceAll('.', '');
-      final String valueDiscString = _valueDiscController.text.replaceAll('.', ''); // Use discount controller
+      final String valueDiscString = _valueDiscController.text.replaceAll(
+        '.',
+        '',
+      ); // Use discount controller
       // --------------------------------------------------------
 
       final double? amount = double.tryParse(valueString);
@@ -702,8 +948,14 @@ class _AddSalesJournalEntryPageState extends State<AddSalesJournalEntryPage> {
 
       // Handle null discount accounts if amount is zero (send 0 or null based on API needs)
       // Sending 0 if not selected and amount is 0 might be safer if API expects the fields
-      final int debitAccountNoDisc = (amountdiscInt != 0 && _selectedDebitAccountDisc != null) ? _selectedDebitAccountDisc!.accountNo : 0; // Or handle null if API allows
-      final int creditAccountNoDisc = (amountdiscInt != 0 && _selectedCreditAccountDisc != null) ? _selectedCreditAccountDisc!.accountNo : 0;// Or handle null if API allows
+      final int debitAccountNoDisc =
+          (amountdiscInt != 0 && _selectedDebitAccountDisc != null)
+              ? _selectedDebitAccountDisc!.accountNo
+              : 0; // Or handle null if API allows
+      final int creditAccountNoDisc =
+          (amountdiscInt != 0 && _selectedCreditAccountDisc != null)
+              ? _selectedCreditAccountDisc!.accountNo
+              : 0; // Or handle null if API allows
 
       // Prepare body, ensure keys match API ('Value_Disc', 'Akun_Debit_disc' etc.)
       final body = json.encode({
@@ -719,27 +971,58 @@ class _AddSalesJournalEntryPageState extends State<AddSalesJournalEntryPage> {
       });
 
       final url = Uri.parse('$baseUrl/api/API/SubmitJPN');
-      final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', };
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
       print("Submitting JPB: $body");
 
-      final response = await http.post(url, headers: headers, body: body).timeout(Duration(seconds: 30));
+      final response = await http
+          .post(url, headers: headers, body: body)
+          .timeout(Duration(seconds: 30));
 
       if (!mounted) return;
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         print("Submit Success: ${response.body}");
-        ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text('Purchase Journal entry submitted successfully!'), backgroundColor: Colors.green), );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Purchase Journal entry submitted successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
         Navigator.pop(context, true);
       } else {
         String serverMessage = response.reasonPhrase ?? 'Submission Failed';
-        try { var errorData = json.decode(response.body); serverMessage = errorData['message'] ?? errorData['title'] ?? errorData['error'] ?? serverMessage; } catch(_) { /* Ignore */ }
+        try {
+          var errorData = json.decode(response.body);
+          serverMessage =
+              errorData['message'] ??
+              errorData['title'] ??
+              errorData['error'] ??
+              serverMessage;
+        } catch (_) {
+          /* Ignore */
+        }
         print("Submit Failed Body: ${response.body}");
-        throw Exception('Failed to submit entry. Server Response: ${response.statusCode} - $serverMessage');
+        throw Exception(
+          'Failed to submit entry. Server Response: ${response.statusCode} - $serverMessage',
+        );
       }
-    } on TimeoutException { _submitError = "Submission request timed out.";
-    } on http.ClientException catch (e) { _submitError = "Network error during submission: ${e.message}.";
-    } catch (e) { print("Error submitting purchase journal entry: $e"); _submitError = "An error occurred during submission: ${e.toString()}";
-    } finally { if (mounted) { setState(() { _isSubmitting = false; }); } }
+    } on TimeoutException {
+      _submitError = "Submission request timed out.";
+    } on http.ClientException catch (e) {
+      _submitError = "Network error during submission: ${e.message}.";
+    } catch (e) {
+      print("Error submitting purchase journal entry: $e");
+      _submitError = "An error occurred during submission: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
   }
 
   @override
@@ -754,117 +1037,334 @@ class _AddSalesJournalEntryPageState extends State<AddSalesJournalEntryPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // --- Date Selection (No changes) ---
-              Text('Transaction Date:', style: Theme.of(context).textTheme.titleMedium), SizedBox(height: 8),
-              InkWell( onTap: () => _selectDate(context), child: InputDecorator( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), suffixIcon: Icon(Icons.calendar_today), ), child: Text( _selectedDate == null ? 'Select Date' : DateFormat('dd MMM yyyy').format(_selectedDate!), style: TextStyle(fontSize: 16), ), ), ),
+              Text(
+                'Transaction Date:',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              SizedBox(height: 8),
+              InkWell(
+                onTap: () => _selectDate(context),
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12.0,
+                      vertical: 16.0,
+                    ),
+                    suffixIcon: Icon(Icons.calendar_today),
+                  ),
+                  child: Text(
+                    _selectedDate == null
+                        ? 'Select Date'
+                        : DateFormat('dd MMM yyyy').format(_selectedDate!),
+                    style: TextStyle(fontSize: 16),
+                  ),
+                ),
+              ),
               SizedBox(height: 16),
 
               // --- Description Input (No changes) ---
-              TextFormField( controller: _descriptionController, decoration: InputDecoration( labelText: 'Description', border: OutlineInputBorder(), hintText: 'Enter transaction description', ), maxLines: 2, textCapitalization: TextCapitalization.sentences, validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter a description.'; } return null; }, ),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: InputDecoration(
+                  labelText: 'Description',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter transaction description',
+                ),
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a description.';
+                  }
+                  return null;
+                },
+              ),
               SizedBox(height: 16),
 
               // --- Accounts Loading/Error State ---
-              if (_isLoadingAccounts) Center(child: Padding(padding: const EdgeInsets.all(8.0), child: CircularProgressIndicator()))
-              else if (_accountError != null) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0), child: Text('Error loading accounts: $_accountError', style: TextStyle(color: Colors.red)), )
+              if (_isLoadingAccounts)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (_accountError != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Text(
+                    'Error loading accounts: $_accountError',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                )
               else ...[
-                  // --- Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
-                  DropdownSearch<Account>(
-                    items: _accountsList,
-                    selectedItem: _selectedDebitAccount,
-                    itemAsString: (Account acc) => acc.accountName, // Display name
-                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration( labelText: "Debit Account", hintText: "Select Debit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
-                    ),
-                    popupProps: PopupProps.menu(
-                      showSearchBox: true, // Keep search box enabled
-                      searchFieldProps: TextFieldProps(
-                        decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), // Simplified hint
-                        autofocus: true,
+                // --- Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                DropdownSearch<Account>(
+                  items: _accountsList,
+                  selectedItem: _selectedDebitAccount,
+                  itemAsString:
+                      (Account acc) => acc.accountName, // Display name
+                  compareFn:
+                      (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                  dropdownDecoratorProps: DropDownDecoratorProps(
+                    dropdownSearchDecoration: InputDecoration(
+                      labelText: "Debit Account",
+                      hintText: "Select Debit Account",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12.0,
+                        vertical: 4.0,
                       ),
-                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
-                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
-                      menuProps: MenuProps(),
                     ),
-                    onChanged: (Account? newValue) { setState(() { _selectedDebitAccount = newValue; }); },
-                    validator: (value) => value == null ? 'Please select a debit account.' : null,
                   ),
-                  SizedBox(height: 16),
+                  popupProps: PopupProps.menu(
+                    showSearchBox: true, // Keep search box enabled
+                    searchFieldProps: TextFieldProps(
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        hintText: "Search account...",
+                      ), // Simplified hint
+                      autofocus: true,
+                    ),
+                    itemBuilder:
+                        (context, account, isSelected) => ListTile(
+                          title: Text(account.accountName),
+                          selected: isSelected,
+                        ),
+                    // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                    menuProps: MenuProps(),
+                  ),
+                  onChanged: (Account? newValue) {
+                    setState(() {
+                      _selectedDebitAccount = newValue;
+                    });
+                  },
+                  validator:
+                      (value) =>
+                          value == null
+                              ? 'Please select a debit account.'
+                              : null,
+                ),
+                SizedBox(height: 16),
 
-                  // --- Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
-                  DropdownSearch<Account>(
-                    items: _accountsList,
-                    selectedItem: _selectedCreditAccount,
-                    itemAsString: (Account acc) => acc.accountName,
-                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration( labelText: "Credit Account", hintText: "Select Credit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                // --- Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                DropdownSearch<Account>(
+                  items: _accountsList,
+                  selectedItem: _selectedCreditAccount,
+                  itemAsString: (Account acc) => acc.accountName,
+                  compareFn:
+                      (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                  dropdownDecoratorProps: DropDownDecoratorProps(
+                    dropdownSearchDecoration: InputDecoration(
+                      labelText: "Credit Account",
+                      hintText: "Select Credit Account",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12.0,
+                        vertical: 4.0,
+                      ),
                     ),
-                    popupProps: PopupProps.menu(
-                      showSearchBox: true,
-                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
-                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
-                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
-                      menuProps: MenuProps(),
-                    ),
-                    onChanged: (Account? newValue) { setState(() { _selectedCreditAccount = newValue; }); },
-                    validator: (value) => value == null ? 'Please select a credit account.' : null,
                   ),
-                  SizedBox(height: 16),
+                  popupProps: PopupProps.menu(
+                    showSearchBox: true,
+                    searchFieldProps: TextFieldProps(
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        hintText: "Search account...",
+                      ),
+                      autofocus: true,
+                    ),
+                    itemBuilder:
+                        (context, account, isSelected) => ListTile(
+                          title: Text(account.accountName),
+                          selected: isSelected,
+                        ),
+                    // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                    menuProps: MenuProps(),
+                  ),
+                  onChanged: (Account? newValue) {
+                    setState(() {
+                      _selectedCreditAccount = newValue;
+                    });
+                  },
+                  validator:
+                      (value) =>
+                          value == null
+                              ? 'Please select a credit account.'
+                              : null,
+                ),
+                SizedBox(height: 16),
 
-                  // --- Discount Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
-                  DropdownSearch<Account>(
-                    items: _accountsList,
-                    selectedItem: _selectedDebitAccountDisc,
-                    itemAsString: (Account acc) => acc.accountName,
-                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration( labelText: "Debit Disc Account (Optional)", hintText: "Select Debit Disc Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                // --- Discount Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                DropdownSearch<Account>(
+                  items: _accountsList,
+                  selectedItem: _selectedDebitAccountDisc,
+                  itemAsString: (Account acc) => acc.accountName,
+                  compareFn:
+                      (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                  dropdownDecoratorProps: DropDownDecoratorProps(
+                    dropdownSearchDecoration: InputDecoration(
+                      labelText: "Debit Disc Account (Optional)",
+                      hintText: "Select Debit Disc Account",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12.0,
+                        vertical: 4.0,
+                      ),
                     ),
-                    popupProps: PopupProps.menu(
-                      showSearchBox: true,
-                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
-                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
-                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
-                      menuProps: MenuProps(),
-                    ),
-                    onChanged: (Account? newValue) { setState(() { _selectedDebitAccountDisc = newValue; }); },
-                    // No validator - optional field
                   ),
-                  SizedBox(height: 16),
+                  popupProps: PopupProps.menu(
+                    showSearchBox: true,
+                    searchFieldProps: TextFieldProps(
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        hintText: "Search account...",
+                      ),
+                      autofocus: true,
+                    ),
+                    itemBuilder:
+                        (context, account, isSelected) => ListTile(
+                          title: Text(account.accountName),
+                          selected: isSelected,
+                        ),
+                    // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                    menuProps: MenuProps(),
+                  ),
+                  onChanged: (Account? newValue) {
+                    setState(() {
+                      _selectedDebitAccountDisc = newValue;
+                    });
+                  },
+                  // No validator - optional field
+                ),
+                SizedBox(height: 16),
 
-                  // --- Discount Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
-                  DropdownSearch<Account>(
-                    items: _accountsList,
-                    selectedItem: _selectedCreditAccountDisc,
-                    itemAsString: (Account acc) => acc.accountName,
-                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration( labelText: "Credit Disc Account (Optional)", hintText: "Select Credit Disc Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                // --- Discount Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                DropdownSearch<Account>(
+                  items: _accountsList,
+                  selectedItem: _selectedCreditAccountDisc,
+                  itemAsString: (Account acc) => acc.accountName,
+                  compareFn:
+                      (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                  dropdownDecoratorProps: DropDownDecoratorProps(
+                    dropdownSearchDecoration: InputDecoration(
+                      labelText: "Credit Disc Account (Optional)",
+                      hintText: "Select Credit Disc Account",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12.0,
+                        vertical: 4.0,
+                      ),
                     ),
-                    popupProps: PopupProps.menu(
-                      showSearchBox: true,
-                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
-                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
-                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
-                      menuProps: MenuProps(),
-                    ),
-                    onChanged: (Account? newValue) { setState(() { _selectedCreditAccountDisc = newValue; }); },
-                    // No validator - optional field
                   ),
-                  SizedBox(height: 16),
-                ],
+                  popupProps: PopupProps.menu(
+                    showSearchBox: true,
+                    searchFieldProps: TextFieldProps(
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        hintText: "Search account...",
+                      ),
+                      autofocus: true,
+                    ),
+                    itemBuilder:
+                        (context, account, isSelected) => ListTile(
+                          title: Text(account.accountName),
+                          selected: isSelected,
+                        ),
+                    // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                    menuProps: MenuProps(),
+                  ),
+                  onChanged: (Account? newValue) {
+                    setState(() {
+                      _selectedCreditAccountDisc = newValue;
+                    });
+                  },
+                  // No validator - optional field
+                ),
+                SizedBox(height: 16),
+              ],
 
               // --- Value Input (No changes) ---
-              TextFormField( controller: _valueController, decoration: InputDecoration( labelText: 'Value', border: OutlineInputBorder(), hintText: 'Enter amount', ), keyboardType: TextInputType.number, inputFormatters: [ ThousandsFormatter(), ], validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter an amount for Value.'; } final cleanedValue = value.replaceAll('.', ''); final number = double.tryParse(cleanedValue); if (number == null || number <= 0) { return 'Please enter a valid positive amount for Value.'; } return null; }, ),
+              TextFormField(
+                controller: _valueController,
+                decoration: InputDecoration(
+                  labelText: 'Value',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter amount',
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [ThousandsFormatter()],
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter an amount for Value.';
+                  }
+                  final cleanedValue = value.replaceAll('.', '');
+                  final number = double.tryParse(cleanedValue);
+                  if (number == null || number <= 0) {
+                    return 'Please enter a valid positive amount for Value.';
+                  }
+                  return null;
+                },
+              ),
               SizedBox(height: 16),
 
               // --- Discount Value Input (No changes) ---
-              TextFormField( controller: _valueDiscController, decoration: InputDecoration( labelText: 'Value Disc (Optional)', border: OutlineInputBorder(), hintText: 'Enter discount amount', ), keyboardType: TextInputType.number, inputFormatters: [ ThousandsFormatter(), ], ),
+              TextFormField(
+                controller: _valueDiscController,
+                decoration: InputDecoration(
+                  labelText: 'Value Disc (Optional)',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter discount amount',
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [ThousandsFormatter()],
+              ),
               SizedBox(height: 24),
 
               // --- Submission Error / Button (No changes) ---
-              if (_submitError != null) Padding( padding: const EdgeInsets.only(bottom: 12.0), child: Text(_submitError!, style: TextStyle(color: Colors.red), textAlign: TextAlign.center), ),
-              Center( child: _isSubmitting ? CircularProgressIndicator() : ElevatedButton.icon( icon: Icon(Icons.save), label: Text('Submit Entry'), onPressed: _submitJournalEntry, style: ElevatedButton.styleFrom( padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15), textStyle: TextStyle(fontSize: 16), ), ), ),
+              if (_submitError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Text(
+                    _submitError!,
+                    style: TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              Center(
+                child:
+                    _isSubmitting
+                        ? CircularProgressIndicator()
+                        : ElevatedButton.icon(
+                          icon: Icon(Icons.save),
+                          label: Text('Submit Entry'),
+                          onPressed: _submitJournalEntry,
+                          style: ElevatedButton.styleFrom(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 30,
+                              vertical: 15,
+                            ),
+                            textStyle: TextStyle(fontSize: 16),
+                          ),
+                        ),
+              ),
               SizedBox(height: 20),
             ],
           ),
@@ -877,22 +1377,26 @@ class _AddSalesJournalEntryPageState extends State<AddSalesJournalEntryPage> {
 // ================================================================
 // ADD PURCHASE JOURNAL ENTRY PAGE (Corrected)
 // ================================================================
-class AddPurchaseJournalEntryPage extends StatefulWidget { // Added StatefulWidget definition
+class AddPurchaseJournalEntryPage extends StatefulWidget {
+  // Added StatefulWidget definition
   @override
-  _AddPurchaseJournalEntryPageState createState() => _AddPurchaseJournalEntryPageState();
+  _AddPurchaseJournalEntryPageState createState() =>
+      _AddPurchaseJournalEntryPageState();
 }
 
-class _AddPurchaseJournalEntryPageState extends State<AddPurchaseJournalEntryPage> {
+class _AddPurchaseJournalEntryPageState
+    extends State<AddPurchaseJournalEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _valueController = TextEditingController();
-  final _valueDiscController = TextEditingController(); // Controller for Discount Value
+  final _valueDiscController =
+      TextEditingController(); // Controller for Discount Value
 
   DateTime? _selectedDate;
   List<Account> _accountsList = [];
   Account? _selectedDebitAccount;
   Account? _selectedCreditAccount;
-  Account? _selectedDebitAccountDisc;  // State for Debit Discount Account
+  Account? _selectedDebitAccountDisc; // State for Debit Discount Account
   Account? _selectedCreditAccountDisc; // State for Credit Discount Account
 
   bool _isLoadingAccounts = true;
@@ -917,39 +1421,132 @@ class _AddPurchaseJournalEntryPageState extends State<AddPurchaseJournalEntryPag
 
   // --- Fetch Accounts (No changes needed here) ---
   Future<void> _fetchAccounts() async {
-    if (!mounted) return; setState(() { _isLoadingAccounts = true; _accountError = null; }); try { SharedPreferences prefs = await SharedPreferences.getInstance(); String? token = prefs.getString('auth_token'); if (token == null || token.isEmpty) { throw Exception('Authentication required.'); } final url = Uri.parse('$baseUrl/api/API/getddAccount'); final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', }; final response = await http.get(url, headers: headers).timeout(Duration(seconds: 30)); if (!mounted) return; if (response.statusCode == 200) { final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes)); setState(() { _accountsList = data.map((jsonItem) => Account.fromJson(jsonItem)).toList(); _isLoadingAccounts = false; }); } else { throw Exception('Failed to load accounts. Status Code: ${response.statusCode}'); } } on TimeoutException { _accountError = "Fetching accounts timed out."; } on http.ClientException catch (e) { _accountError = "Network error fetching accounts: ${e.message}."; } catch (e) { print("Error fetching accounts: $e"); _accountError = "An error occurred fetching accounts: ${e.toString()}"; } finally { if (mounted) { setState(() { _isLoadingAccounts = false; }); } }
+    if (!mounted) return;
+    setState(() {
+      _isLoadingAccounts = true;
+      _accountError = null;
+    });
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required.');
+      }
+      final url = Uri.parse('$baseUrl/api/API/getddAccount');
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(Duration(seconds: 30));
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        setState(() {
+          _accountsList =
+              data.map((jsonItem) => Account.fromJson(jsonItem)).toList();
+          _isLoadingAccounts = false;
+        });
+      } else {
+        throw Exception(
+          'Failed to load accounts. Status Code: ${response.statusCode}',
+        );
+      }
+    } on TimeoutException {
+      _accountError = "Fetching accounts timed out.";
+    } on http.ClientException catch (e) {
+      _accountError = "Network error fetching accounts: ${e.message}.";
+    } catch (e) {
+      print("Error fetching accounts: $e");
+      _accountError = "An error occurred fetching accounts: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingAccounts = false;
+        });
+      }
+    }
   }
 
   // --- Select Date (No changes needed here) ---
   Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker( context: context, initialDate: _selectedDate ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2101), ); if (picked != null && picked != _selectedDate && mounted) { setState(() { _selectedDate = picked; }); }
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null && picked != _selectedDate && mounted) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
   }
 
   // --- Submit Journal Entry (CORRECTED Validation & Parsing) ---
   Future<void> _submitJournalEntry() async {
-    if (!_formKey.currentState!.validate()) { return; }
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
     // Basic validation
-    if (_selectedDate == null || _selectedDebitAccount == null || _selectedCreditAccount == null) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please fill Date, Debit Account, and Credit Account.'), backgroundColor: Colors.orange));
+    if (_selectedDate == null ||
+        _selectedDebitAccount == null ||
+        _selectedCreditAccount == null) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Please fill Date, Debit Account, and Credit Account.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
       return;
     }
     // Check if main accounts are the same
     if (_selectedDebitAccount!.accountNo == _selectedCreditAccount!.accountNo) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Main Debit and Credit accounts cannot be the same.'), backgroundColor: Colors.orange));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Main Debit and Credit accounts cannot be the same.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
       return;
     }
 
     // --- ADDED: Validation for Discount Accounts (if selected) ---
     // Modify this logic if discount accounts are *required* even if discount amount is 0
-    bool hasDiscountAmount = _valueDiscController.text.replaceAll('.', '').isNotEmpty && double.tryParse(_valueDiscController.text.replaceAll('.', '')) != 0;
+    bool hasDiscountAmount =
+        _valueDiscController.text.replaceAll('.', '').isNotEmpty &&
+        double.tryParse(_valueDiscController.text.replaceAll('.', '')) != 0;
     if (hasDiscountAmount) {
-      if (_selectedDebitAccountDisc == null || _selectedCreditAccountDisc == null) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please select both Debit and Credit Discount accounts if entering a discount value.'), backgroundColor: Colors.orange));
+      if (_selectedDebitAccountDisc == null ||
+          _selectedCreditAccountDisc == null) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Please select both Debit and Credit Discount accounts if entering a discount value.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
         return;
       }
-      if (_selectedDebitAccountDisc!.accountNo == _selectedCreditAccountDisc!.accountNo) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Discount Debit and Credit accounts cannot be the same.'), backgroundColor: Colors.orange));
+      if (_selectedDebitAccountDisc!.accountNo ==
+          _selectedCreditAccountDisc!.accountNo) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Discount Debit and Credit accounts cannot be the same.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
         return;
       }
       // Optional: Check if discount accounts conflict with main accounts
@@ -957,21 +1554,31 @@ class _AddPurchaseJournalEntryPageState extends State<AddPurchaseJournalEntryPag
     }
     // ----------------------------------------------------------
 
-    setState(() { _isSubmitting = true; _submitError = null; });
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
 
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('auth_token');
-      if (token == null || token.isEmpty) { throw Exception('Authentication required.'); }
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required.');
+      }
 
-      final String formattedDate = DateFormat("yyyy-MM-dd").format(_selectedDate!);
+      final String formattedDate = DateFormat(
+        "yyyy-MM-dd",
+      ).format(_selectedDate!);
       final String description = _descriptionController.text;
       final int debitAccountNo = _selectedDebitAccount!.accountNo;
       final int creditAccountNo = _selectedCreditAccount!.accountNo;
 
       // --- CORRECTED: Use correct controller for discount value ---
       final String valueString = _valueController.text.replaceAll('.', '');
-      final String valueDiscString = _valueDiscController.text.replaceAll('.', ''); // Use discount controller
+      final String valueDiscString = _valueDiscController.text.replaceAll(
+        '.',
+        '',
+      ); // Use discount controller
       // --------------------------------------------------------
 
       final double? amount = double.tryParse(valueString);
@@ -989,8 +1596,14 @@ class _AddPurchaseJournalEntryPageState extends State<AddPurchaseJournalEntryPag
 
       // Handle null discount accounts if amount is zero (send 0 or null based on API needs)
       // Sending 0 if not selected and amount is 0 might be safer if API expects the fields
-      final int debitAccountNoDisc = (amountdiscInt != 0 && _selectedDebitAccountDisc != null) ? _selectedDebitAccountDisc!.accountNo : 0; // Or handle null if API allows
-      final int creditAccountNoDisc = (amountdiscInt != 0 && _selectedCreditAccountDisc != null) ? _selectedCreditAccountDisc!.accountNo : 0;// Or handle null if API allows
+      final int debitAccountNoDisc =
+          (amountdiscInt != 0 && _selectedDebitAccountDisc != null)
+              ? _selectedDebitAccountDisc!.accountNo
+              : 0; // Or handle null if API allows
+      final int creditAccountNoDisc =
+          (amountdiscInt != 0 && _selectedCreditAccountDisc != null)
+              ? _selectedCreditAccountDisc!.accountNo
+              : 0; // Or handle null if API allows
 
       // Prepare body, ensure keys match API ('Value_Disc', 'Akun_Debit_disc' etc.)
       final body = json.encode({
@@ -1006,27 +1619,58 @@ class _AddPurchaseJournalEntryPageState extends State<AddPurchaseJournalEntryPag
       });
 
       final url = Uri.parse('$baseUrl/api/API/SubmitJPB');
-      final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', };
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
       print("Submitting JPB: $body");
 
-      final response = await http.post(url, headers: headers, body: body).timeout(Duration(seconds: 30));
+      final response = await http
+          .post(url, headers: headers, body: body)
+          .timeout(Duration(seconds: 30));
 
       if (!mounted) return;
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         print("Submit Success: ${response.body}");
-        ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text('Purchase Journal entry submitted successfully!'), backgroundColor: Colors.green), );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Purchase Journal entry submitted successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
         Navigator.pop(context, true);
       } else {
         String serverMessage = response.reasonPhrase ?? 'Submission Failed';
-        try { var errorData = json.decode(response.body); serverMessage = errorData['message'] ?? errorData['title'] ?? errorData['error'] ?? serverMessage; } catch(_) { /* Ignore */ }
+        try {
+          var errorData = json.decode(response.body);
+          serverMessage =
+              errorData['message'] ??
+              errorData['title'] ??
+              errorData['error'] ??
+              serverMessage;
+        } catch (_) {
+          /* Ignore */
+        }
         print("Submit Failed Body: ${response.body}");
-        throw Exception('Failed to submit entry. Server Response: ${response.statusCode} - $serverMessage');
+        throw Exception(
+          'Failed to submit entry. Server Response: ${response.statusCode} - $serverMessage',
+        );
       }
-    } on TimeoutException { _submitError = "Submission request timed out.";
-    } on http.ClientException catch (e) { _submitError = "Network error during submission: ${e.message}.";
-    } catch (e) { print("Error submitting purchase journal entry: $e"); _submitError = "An error occurred during submission: ${e.toString()}";
-    } finally { if (mounted) { setState(() { _isSubmitting = false; }); } }
+    } on TimeoutException {
+      _submitError = "Submission request timed out.";
+    } on http.ClientException catch (e) {
+      _submitError = "Network error during submission: ${e.message}.";
+    } catch (e) {
+      print("Error submitting purchase journal entry: $e");
+      _submitError = "An error occurred during submission: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
   }
 
   @override
@@ -1041,117 +1685,334 @@ class _AddPurchaseJournalEntryPageState extends State<AddPurchaseJournalEntryPag
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // --- Date Selection (No changes) ---
-              Text('Transaction Date:', style: Theme.of(context).textTheme.titleMedium), SizedBox(height: 8),
-              InkWell( onTap: () => _selectDate(context), child: InputDecorator( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), suffixIcon: Icon(Icons.calendar_today), ), child: Text( _selectedDate == null ? 'Select Date' : DateFormat('dd MMM yyyy').format(_selectedDate!), style: TextStyle(fontSize: 16), ), ), ),
+              Text(
+                'Transaction Date:',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              SizedBox(height: 8),
+              InkWell(
+                onTap: () => _selectDate(context),
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12.0,
+                      vertical: 16.0,
+                    ),
+                    suffixIcon: Icon(Icons.calendar_today),
+                  ),
+                  child: Text(
+                    _selectedDate == null
+                        ? 'Select Date'
+                        : DateFormat('dd MMM yyyy').format(_selectedDate!),
+                    style: TextStyle(fontSize: 16),
+                  ),
+                ),
+              ),
               SizedBox(height: 16),
 
               // --- Description Input (No changes) ---
-              TextFormField( controller: _descriptionController, decoration: InputDecoration( labelText: 'Description', border: OutlineInputBorder(), hintText: 'Enter transaction description', ), maxLines: 2, textCapitalization: TextCapitalization.sentences, validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter a description.'; } return null; }, ),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: InputDecoration(
+                  labelText: 'Description',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter transaction description',
+                ),
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a description.';
+                  }
+                  return null;
+                },
+              ),
               SizedBox(height: 16),
 
               // --- Accounts Loading/Error State ---
-              if (_isLoadingAccounts) Center(child: Padding(padding: const EdgeInsets.all(8.0), child: CircularProgressIndicator()))
-              else if (_accountError != null) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0), child: Text('Error loading accounts: $_accountError', style: TextStyle(color: Colors.red)), )
+              if (_isLoadingAccounts)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (_accountError != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Text(
+                    'Error loading accounts: $_accountError',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                )
               else ...[
-                  // --- Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
-                  DropdownSearch<Account>(
-                    items: _accountsList,
-                    selectedItem: _selectedDebitAccount,
-                    itemAsString: (Account acc) => acc.accountName, // Display name
-                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration( labelText: "Debit Account", hintText: "Select Debit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
-                    ),
-                    popupProps: PopupProps.menu(
-                      showSearchBox: true, // Keep search box enabled
-                      searchFieldProps: TextFieldProps(
-                        decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), // Simplified hint
-                        autofocus: true,
+                // --- Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                DropdownSearch<Account>(
+                  items: _accountsList,
+                  selectedItem: _selectedDebitAccount,
+                  itemAsString:
+                      (Account acc) => acc.accountName, // Display name
+                  compareFn:
+                      (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                  dropdownDecoratorProps: DropDownDecoratorProps(
+                    dropdownSearchDecoration: InputDecoration(
+                      labelText: "Debit Account",
+                      hintText: "Select Debit Account",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12.0,
+                        vertical: 4.0,
                       ),
-                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
-                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
-                      menuProps: MenuProps(),
                     ),
-                    onChanged: (Account? newValue) { setState(() { _selectedDebitAccount = newValue; }); },
-                    validator: (value) => value == null ? 'Please select a debit account.' : null,
                   ),
-                  SizedBox(height: 16),
+                  popupProps: PopupProps.menu(
+                    showSearchBox: true, // Keep search box enabled
+                    searchFieldProps: TextFieldProps(
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        hintText: "Search account...",
+                      ), // Simplified hint
+                      autofocus: true,
+                    ),
+                    itemBuilder:
+                        (context, account, isSelected) => ListTile(
+                          title: Text(account.accountName),
+                          selected: isSelected,
+                        ),
+                    // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                    menuProps: MenuProps(),
+                  ),
+                  onChanged: (Account? newValue) {
+                    setState(() {
+                      _selectedDebitAccount = newValue;
+                    });
+                  },
+                  validator:
+                      (value) =>
+                          value == null
+                              ? 'Please select a debit account.'
+                              : null,
+                ),
+                SizedBox(height: 16),
 
-                  // --- Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
-                  DropdownSearch<Account>(
-                    items: _accountsList,
-                    selectedItem: _selectedCreditAccount,
-                    itemAsString: (Account acc) => acc.accountName,
-                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration( labelText: "Credit Account", hintText: "Select Credit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                // --- Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                DropdownSearch<Account>(
+                  items: _accountsList,
+                  selectedItem: _selectedCreditAccount,
+                  itemAsString: (Account acc) => acc.accountName,
+                  compareFn:
+                      (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                  dropdownDecoratorProps: DropDownDecoratorProps(
+                    dropdownSearchDecoration: InputDecoration(
+                      labelText: "Credit Account",
+                      hintText: "Select Credit Account",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12.0,
+                        vertical: 4.0,
+                      ),
                     ),
-                    popupProps: PopupProps.menu(
-                      showSearchBox: true,
-                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
-                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
-                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
-                      menuProps: MenuProps(),
-                    ),
-                    onChanged: (Account? newValue) { setState(() { _selectedCreditAccount = newValue; }); },
-                    validator: (value) => value == null ? 'Please select a credit account.' : null,
                   ),
-                  SizedBox(height: 16),
+                  popupProps: PopupProps.menu(
+                    showSearchBox: true,
+                    searchFieldProps: TextFieldProps(
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        hintText: "Search account...",
+                      ),
+                      autofocus: true,
+                    ),
+                    itemBuilder:
+                        (context, account, isSelected) => ListTile(
+                          title: Text(account.accountName),
+                          selected: isSelected,
+                        ),
+                    // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                    menuProps: MenuProps(),
+                  ),
+                  onChanged: (Account? newValue) {
+                    setState(() {
+                      _selectedCreditAccount = newValue;
+                    });
+                  },
+                  validator:
+                      (value) =>
+                          value == null
+                              ? 'Please select a credit account.'
+                              : null,
+                ),
+                SizedBox(height: 16),
 
-                  // --- Discount Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
-                  DropdownSearch<Account>(
-                    items: _accountsList,
-                    selectedItem: _selectedDebitAccountDisc,
-                    itemAsString: (Account acc) => acc.accountName,
-                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration( labelText: "Debit Disc Account (Optional)", hintText: "Select Debit Disc Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                // --- Discount Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                DropdownSearch<Account>(
+                  items: _accountsList,
+                  selectedItem: _selectedDebitAccountDisc,
+                  itemAsString: (Account acc) => acc.accountName,
+                  compareFn:
+                      (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                  dropdownDecoratorProps: DropDownDecoratorProps(
+                    dropdownSearchDecoration: InputDecoration(
+                      labelText: "Debit Disc Account (Optional)",
+                      hintText: "Select Debit Disc Account",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12.0,
+                        vertical: 4.0,
+                      ),
                     ),
-                    popupProps: PopupProps.menu(
-                      showSearchBox: true,
-                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
-                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
-                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
-                      menuProps: MenuProps(),
-                    ),
-                    onChanged: (Account? newValue) { setState(() { _selectedDebitAccountDisc = newValue; }); },
-                    // No validator - optional field
                   ),
-                  SizedBox(height: 16),
+                  popupProps: PopupProps.menu(
+                    showSearchBox: true,
+                    searchFieldProps: TextFieldProps(
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        hintText: "Search account...",
+                      ),
+                      autofocus: true,
+                    ),
+                    itemBuilder:
+                        (context, account, isSelected) => ListTile(
+                          title: Text(account.accountName),
+                          selected: isSelected,
+                        ),
+                    // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                    menuProps: MenuProps(),
+                  ),
+                  onChanged: (Account? newValue) {
+                    setState(() {
+                      _selectedDebitAccountDisc = newValue;
+                    });
+                  },
+                  // No validator - optional field
+                ),
+                SizedBox(height: 16),
 
-                  // --- Discount Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
-                  DropdownSearch<Account>(
-                    items: _accountsList,
-                    selectedItem: _selectedCreditAccountDisc,
-                    itemAsString: (Account acc) => acc.accountName,
-                    compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
-                    dropdownDecoratorProps: DropDownDecoratorProps(
-                      dropdownSearchDecoration: InputDecoration( labelText: "Credit Disc Account (Optional)", hintText: "Select Credit Disc Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                // --- Discount Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                DropdownSearch<Account>(
+                  items: _accountsList,
+                  selectedItem: _selectedCreditAccountDisc,
+                  itemAsString: (Account acc) => acc.accountName,
+                  compareFn:
+                      (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                  dropdownDecoratorProps: DropDownDecoratorProps(
+                    dropdownSearchDecoration: InputDecoration(
+                      labelText: "Credit Disc Account (Optional)",
+                      hintText: "Select Credit Disc Account",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12.0,
+                        vertical: 4.0,
+                      ),
                     ),
-                    popupProps: PopupProps.menu(
-                      showSearchBox: true,
-                      searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
-                      itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
-                      // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
-                      menuProps: MenuProps(),
-                    ),
-                    onChanged: (Account? newValue) { setState(() { _selectedCreditAccountDisc = newValue; }); },
-                    // No validator - optional field
                   ),
-                  SizedBox(height: 16),
-                ],
+                  popupProps: PopupProps.menu(
+                    showSearchBox: true,
+                    searchFieldProps: TextFieldProps(
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        hintText: "Search account...",
+                      ),
+                      autofocus: true,
+                    ),
+                    itemBuilder:
+                        (context, account, isSelected) => ListTile(
+                          title: Text(account.accountName),
+                          selected: isSelected,
+                        ),
+                    // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                    menuProps: MenuProps(),
+                  ),
+                  onChanged: (Account? newValue) {
+                    setState(() {
+                      _selectedCreditAccountDisc = newValue;
+                    });
+                  },
+                  // No validator - optional field
+                ),
+                SizedBox(height: 16),
+              ],
 
               // --- Value Input (No changes) ---
-              TextFormField( controller: _valueController, decoration: InputDecoration( labelText: 'Value', border: OutlineInputBorder(), hintText: 'Enter amount', ), keyboardType: TextInputType.number, inputFormatters: [ ThousandsFormatter(), ], validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter an amount for Value.'; } final cleanedValue = value.replaceAll('.', ''); final number = double.tryParse(cleanedValue); if (number == null || number <= 0) { return 'Please enter a valid positive amount for Value.'; } return null; }, ),
+              TextFormField(
+                controller: _valueController,
+                decoration: InputDecoration(
+                  labelText: 'Value',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter amount',
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [ThousandsFormatter()],
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter an amount for Value.';
+                  }
+                  final cleanedValue = value.replaceAll('.', '');
+                  final number = double.tryParse(cleanedValue);
+                  if (number == null || number <= 0) {
+                    return 'Please enter a valid positive amount for Value.';
+                  }
+                  return null;
+                },
+              ),
               SizedBox(height: 16),
 
               // --- Discount Value Input (No changes) ---
-              TextFormField( controller: _valueDiscController, decoration: InputDecoration( labelText: 'Value Disc (Optional)', border: OutlineInputBorder(), hintText: 'Enter discount amount', ), keyboardType: TextInputType.number, inputFormatters: [ ThousandsFormatter(), ], ),
+              TextFormField(
+                controller: _valueDiscController,
+                decoration: InputDecoration(
+                  labelText: 'Value Disc (Optional)',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter discount amount',
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [ThousandsFormatter()],
+              ),
               SizedBox(height: 24),
 
               // --- Submission Error / Button (No changes) ---
-              if (_submitError != null) Padding( padding: const EdgeInsets.only(bottom: 12.0), child: Text(_submitError!, style: TextStyle(color: Colors.red), textAlign: TextAlign.center), ),
-              Center( child: _isSubmitting ? CircularProgressIndicator() : ElevatedButton.icon( icon: Icon(Icons.save), label: Text('Submit Entry'), onPressed: _submitJournalEntry, style: ElevatedButton.styleFrom( padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15), textStyle: TextStyle(fontSize: 16), ), ), ),
+              if (_submitError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Text(
+                    _submitError!,
+                    style: TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              Center(
+                child:
+                    _isSubmitting
+                        ? CircularProgressIndicator()
+                        : ElevatedButton.icon(
+                          icon: Icon(Icons.save),
+                          label: Text('Submit Entry'),
+                          onPressed: _submitJournalEntry,
+                          style: ElevatedButton.styleFrom(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 30,
+                              vertical: 15,
+                            ),
+                            textStyle: TextStyle(fontSize: 16),
+                          ),
+                        ),
+              ),
               SizedBox(height: 20),
             ],
           ),
@@ -1166,10 +2027,12 @@ class _AddPurchaseJournalEntryPageState extends State<AddPurchaseJournalEntryPag
 
 class AddMemorialJournalEntryPage extends StatefulWidget {
   @override
-  _AddMemorialJournalEntryPageState createState() => _AddMemorialJournalEntryPageState();
+  _AddMemorialJournalEntryPageState createState() =>
+      _AddMemorialJournalEntryPageState();
 }
 
-class _AddMemorialJournalEntryPageState extends State<AddMemorialJournalEntryPage> {
+class _AddMemorialJournalEntryPageState
+    extends State<AddMemorialJournalEntryPage> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
@@ -1200,46 +2063,118 @@ class _AddMemorialJournalEntryPageState extends State<AddMemorialJournalEntryPag
 
   Future<void> _fetchAccounts() async {
     if (!mounted) return;
-    setState(() { _isLoadingAccounts = true; _accountError = null; });
+    setState(() {
+      _isLoadingAccounts = true;
+      _accountError = null;
+    });
     try {
-      SharedPreferences prefs = await SharedPreferences.getInstance(); String? token = prefs.getString('auth_token'); if (token == null || token.isEmpty) { throw Exception('Authentication required.'); }
-      final url = Uri.parse('$baseUrl/api/API/getddAccount'); final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', };
-      final response = await http.get(url, headers: headers).timeout(Duration(seconds: 30)); if (!mounted) return;
-      if (response.statusCode == 200) { final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes)); setState(() { _accountsList = data.map((jsonItem) => Account.fromJson(jsonItem)).toList(); _isLoadingAccounts = false; });
-      } else { throw Exception('Failed to load accounts. Status Code: ${response.statusCode}'); }
-    } on TimeoutException { _accountError = "Fetching accounts timed out."; } on http.ClientException catch (e) { _accountError = "Network error fetching accounts: ${e.message}."; } catch (e) { print("Error fetching accounts: $e"); _accountError = "An error occurred fetching accounts: ${e.toString()}"; } finally { if (mounted) { setState(() { _isLoadingAccounts = false; }); } }
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required.');
+      }
+      final url = Uri.parse('$baseUrl/api/API/getddAccount');
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(Duration(seconds: 30));
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        setState(() {
+          _accountsList =
+              data.map((jsonItem) => Account.fromJson(jsonItem)).toList();
+          _isLoadingAccounts = false;
+        });
+      } else {
+        throw Exception(
+          'Failed to load accounts. Status Code: ${response.statusCode}',
+        );
+      }
+    } on TimeoutException {
+      _accountError = "Fetching accounts timed out.";
+    } on http.ClientException catch (e) {
+      _accountError = "Network error fetching accounts: ${e.message}.";
+    } catch (e) {
+      print("Error fetching accounts: $e");
+      _accountError = "An error occurred fetching accounts: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingAccounts = false;
+        });
+      }
+    }
   }
 
   Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker( context: context, initialDate: _selectedDate ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2101), );
-    if (picked != null && picked != _selectedDate && mounted) { setState(() { _selectedDate = picked; }); }
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null && picked != _selectedDate && mounted) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
   }
 
   Future<void> _submitJournalEntry() async {
-    if (!_formKey.currentState!.validate()) { return; }
-    if (_selectedDate == null || _selectedDebitAccount == null || _selectedCreditAccount == null) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please fill all required fields.'), backgroundColor: Colors.orange));
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    if (_selectedDate == null ||
+        _selectedDebitAccount == null ||
+        _selectedCreditAccount == null) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Please fill all required fields.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
       return;
     }
     if (_selectedDebitAccount!.accountNo == _selectedCreditAccount!.accountNo) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Debit and Credit accounts cannot be the same.'), backgroundColor: Colors.orange));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Debit and Credit accounts cannot be the same.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
       return;
     }
 
-    setState(() { _isSubmitting = true; _submitError = null; });
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
 
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('auth_token');
-      if (token == null || token.isEmpty) { throw Exception('Authentication required.'); }
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required.');
+      }
 
       // --- CHANGE 1: Format date as yyyy-MM-dd ---
-      final String formattedDate = DateFormat("yyyy-MM-dd").format(_selectedDate!);
+      final String formattedDate = DateFormat(
+        "yyyy-MM-dd",
+      ).format(_selectedDate!);
 
       final String description = _descriptionController.text;
       final int debitAccountNo = _selectedDebitAccount!.accountNo;
       final int creditAccountNo = _selectedCreditAccount!.accountNo;
-      final String amountString = _amountController.text.replaceAll('.', ''); // Remove separators
+      final String amountString = _amountController.text.replaceAll(
+        '.',
+        '',
+      ); // Remove separators
       final double? amount = double.tryParse(amountString);
 
       if (amount == null || amount <= 0) {
@@ -1254,104 +2189,297 @@ class _AddMemorialJournalEntryPageState extends State<AddMemorialJournalEntryPag
         "Description": description,
         "Akun_Debit": debitAccountNo,
         "Akun_Credit": creditAccountNo,
-        "Debit": amountInt,    // Send as integer
-        "Credit": amountInt,   // Send as integer
+        "Debit": amountInt, // Send as integer
+        "Credit": amountInt, // Send as integer
       });
 
       final url = Uri.parse('$baseUrl/api/API/SubmitJM');
-      final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', };
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
       print("Submitting JM: $body"); // Check the body format before sending
 
-      final response = await http.post(url, headers: headers, body: body).timeout(Duration(seconds: 30));
+      final response = await http
+          .post(url, headers: headers, body: body)
+          .timeout(Duration(seconds: 30));
 
       if (!mounted) return;
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         print("Submit Success: ${response.body}");
-        ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text('Journal entry submitted successfully!'), backgroundColor: Colors.green), );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Journal entry submitted successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
         Navigator.pop(context, true);
       } else {
         String serverMessage = response.reasonPhrase ?? 'Submission Failed';
-        try { var errorData = json.decode(response.body); serverMessage = errorData['message'] ?? errorData['title'] ?? errorData['error'] ?? serverMessage; } catch(_) { /* Ignore */ }
+        try {
+          var errorData = json.decode(response.body);
+          serverMessage =
+              errorData['message'] ??
+              errorData['title'] ??
+              errorData['error'] ??
+              serverMessage;
+        } catch (_) {
+          /* Ignore */
+        }
         // Include response body in error for better debugging
         print("Submit Failed Body: ${response.body}");
-        throw Exception('Failed to submit entry. Server Response: ${response.statusCode} - $serverMessage');
+        throw Exception(
+          'Failed to submit entry. Server Response: ${response.statusCode} - $serverMessage',
+        );
       }
-    } on TimeoutException { _submitError = "Submission request timed out.";
-    } on http.ClientException catch (e) { _submitError = "Network error during submission: ${e.message}.";
-    } catch (e) { print("Error submitting journal entry: $e"); _submitError = "An error occurred during submission: ${e.toString()}";
-    } finally { if (mounted) { setState(() { _isSubmitting = false; }); } }
+    } on TimeoutException {
+      _submitError = "Submission request timed out.";
+    } on http.ClientException catch (e) {
+      _submitError = "Network error during submission: ${e.message}.";
+    } catch (e) {
+      print("Error submitting journal entry: $e");
+      _submitError = "An error occurred during submission: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Add Memorial Journal')),
-      body: SingleChildScrollView( padding: const EdgeInsets.all(16.0), child: Form( key: _formKey, child: Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Transaction Date:', style: Theme.of(context).textTheme.titleMedium), SizedBox(height: 8),
-        InkWell( onTap: () => _selectDate(context), child: InputDecorator( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0), suffixIcon: Icon(Icons.calendar_today), ), child: Text( _selectedDate == null ? 'Select Date' : DateFormat('dd MMM yyyy').format(_selectedDate!), style: TextStyle(fontSize: 16), ), ), ),
-        SizedBox(height: 16),
-        TextFormField( controller: _descriptionController, decoration: InputDecoration( labelText: 'Description', border: OutlineInputBorder(), hintText: 'Enter transaction description', ), maxLines: 2, textCapitalization: TextCapitalization.sentences, validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter a description.'; } return null; }, ),
-        SizedBox(height: 16),
-        if (_isLoadingAccounts) Center(child: Padding(padding: const EdgeInsets.all(8.0), child: CircularProgressIndicator()))
-        else if (_accountError != null) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0), child: Text('Error loading accounts: $_accountError', style: TextStyle(color: Colors.red)), )
-        else ...[
-            // --- Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
-            DropdownSearch<Account>(
-              items: _accountsList,
-              selectedItem: _selectedDebitAccount,
-              itemAsString: (Account acc) => acc.accountName, // Display name
-              compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
-              dropdownDecoratorProps: DropDownDecoratorProps(
-                dropdownSearchDecoration: InputDecoration( labelText: "Debit Account", hintText: "Select Debit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Transaction Date:',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-              popupProps: PopupProps.menu(
-                showSearchBox: true, // Keep search box enabled
-                searchFieldProps: TextFieldProps(
-                  decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), // Simplified hint
-                  autofocus: true,
+              SizedBox(height: 8),
+              InkWell(
+                onTap: () => _selectDate(context),
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12.0,
+                      vertical: 16.0,
+                    ),
+                    suffixIcon: Icon(Icons.calendar_today),
+                  ),
+                  child: Text(
+                    _selectedDate == null
+                        ? 'Select Date'
+                        : DateFormat('dd MMM yyyy').format(_selectedDate!),
+                    style: TextStyle(fontSize: 16),
+                  ),
                 ),
-                itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
-                // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
-                menuProps: MenuProps(),
               ),
-              onChanged: (Account? newValue) { setState(() { _selectedDebitAccount = newValue; }); },
-              validator: (value) => value == null ? 'Please select a debit account.' : null,
-            ),
-            SizedBox(height: 16),
+              SizedBox(height: 16),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: InputDecoration(
+                  labelText: 'Description',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter transaction description',
+                ),
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a description.';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+              if (_isLoadingAccounts)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (_accountError != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Text(
+                    'Error loading accounts: $_accountError',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                )
+              else ...[
+                // --- Debit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                DropdownSearch<Account>(
+                  items: _accountsList,
+                  selectedItem: _selectedDebitAccount,
+                  itemAsString:
+                      (Account acc) => acc.accountName, // Display name
+                  compareFn:
+                      (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                  dropdownDecoratorProps: DropDownDecoratorProps(
+                    dropdownSearchDecoration: InputDecoration(
+                      labelText: "Debit Account",
+                      hintText: "Select Debit Account",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12.0,
+                        vertical: 4.0,
+                      ),
+                    ),
+                  ),
+                  popupProps: PopupProps.menu(
+                    showSearchBox: true, // Keep search box enabled
+                    searchFieldProps: TextFieldProps(
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        hintText: "Search account...",
+                      ), // Simplified hint
+                      autofocus: true,
+                    ),
+                    itemBuilder:
+                        (context, account, isSelected) => ListTile(
+                          title: Text(account.accountName),
+                          selected: isSelected,
+                        ),
+                    // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                    menuProps: MenuProps(),
+                  ),
+                  onChanged: (Account? newValue) {
+                    setState(() {
+                      _selectedDebitAccount = newValue;
+                    });
+                  },
+                  validator:
+                      (value) =>
+                          value == null
+                              ? 'Please select a debit account.'
+                              : null,
+                ),
+                SizedBox(height: 16),
 
-            // --- Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
-            DropdownSearch<Account>(
-              items: _accountsList,
-              selectedItem: _selectedCreditAccount,
-              itemAsString: (Account acc) => acc.accountName,
-              compareFn: (Account? i, Account? s) => i?.accountNo == s?.accountNo,
-              dropdownDecoratorProps: DropDownDecoratorProps(
-                dropdownSearchDecoration: InputDecoration( labelText: "Credit Account", hintText: "Select Credit Account", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), ),
+                // --- Credit Account Dropdown (USING DropdownSearch - filterFn removed) ---
+                DropdownSearch<Account>(
+                  items: _accountsList,
+                  selectedItem: _selectedCreditAccount,
+                  itemAsString: (Account acc) => acc.accountName,
+                  compareFn:
+                      (Account? i, Account? s) => i?.accountNo == s?.accountNo,
+                  dropdownDecoratorProps: DropDownDecoratorProps(
+                    dropdownSearchDecoration: InputDecoration(
+                      labelText: "Credit Account",
+                      hintText: "Select Credit Account",
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12.0,
+                        vertical: 4.0,
+                      ),
+                    ),
+                  ),
+                  popupProps: PopupProps.menu(
+                    showSearchBox: true,
+                    searchFieldProps: TextFieldProps(
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        hintText: "Search account...",
+                      ),
+                      autofocus: true,
+                    ),
+                    itemBuilder:
+                        (context, account, isSelected) => ListTile(
+                          title: Text(account.accountName),
+                          selected: isSelected,
+                        ),
+                    // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
+                    menuProps: MenuProps(),
+                  ),
+                  onChanged: (Account? newValue) {
+                    setState(() {
+                      _selectedCreditAccount = newValue;
+                    });
+                  },
+                  validator:
+                      (value) =>
+                          value == null
+                              ? 'Please select a credit account.'
+                              : null,
+                ),
+                SizedBox(height: 16),
+              ],
+              TextFormField(
+                controller: _amountController,
+                decoration: InputDecoration(
+                  labelText: 'Amount (Debit/Credit)',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter amount',
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [ThousandsFormatter()],
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter an amount.';
+                  }
+                  final cleanedValue = value.replaceAll('.', '');
+                  final number = double.tryParse(cleanedValue);
+                  if (number == null || number <= 0) {
+                    return 'Please enter a valid positive amount.';
+                  }
+                  return null;
+                },
               ),
-              popupProps: PopupProps.menu(
-                showSearchBox: true,
-                searchFieldProps: TextFieldProps( decoration: InputDecoration( border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), hintText: "Search account...", ), autofocus: true, ),
-                itemBuilder: (context, account, isSelected) => ListTile( title: Text(account.accountName), selected: isSelected, ),
-                // filterFn: (account, filter) { ... }, // <-- REMOVED filterFn from here
-                menuProps: MenuProps(),
+              SizedBox(height: 24),
+              if (_submitError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Text(
+                    _submitError!,
+                    style: TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              Center(
+                child:
+                    _isSubmitting
+                        ? CircularProgressIndicator()
+                        : ElevatedButton.icon(
+                          icon: Icon(Icons.save),
+                          label: Text('Submit Entry'),
+                          onPressed: _submitJournalEntry,
+                          style: ElevatedButton.styleFrom(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 30,
+                              vertical: 15,
+                            ),
+                            textStyle: TextStyle(fontSize: 16),
+                          ),
+                        ),
               ),
-              onChanged: (Account? newValue) { setState(() { _selectedCreditAccount = newValue; }); },
-              validator: (value) => value == null ? 'Please select a credit account.' : null,
-            ),
-            SizedBox(height: 16),
-          ],
-        TextFormField( controller: _amountController, decoration: InputDecoration( labelText: 'Amount (Debit/Credit)', border: OutlineInputBorder(), hintText: 'Enter amount', ),
-          keyboardType: TextInputType.number,
-          inputFormatters: [ ThousandsFormatter(), ],
-          validator: (value) { if (value == null || value.trim().isEmpty) { return 'Please enter an amount.'; } final cleanedValue = value.replaceAll('.', ''); final number = double.tryParse(cleanedValue); if (number == null || number <= 0) { return 'Please enter a valid positive amount.'; } return null; }, ),
-        SizedBox(height: 24),
-        if (_submitError != null) Padding( padding: const EdgeInsets.only(bottom: 12.0), child: Text(_submitError!, style: TextStyle(color: Colors.red), textAlign: TextAlign.center), ),
-        Center( child: _isSubmitting ? CircularProgressIndicator() : ElevatedButton.icon( icon: Icon(Icons.save), label: Text('Submit Entry'), onPressed: _submitJournalEntry, style: ElevatedButton.styleFrom( padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15), textStyle: TextStyle(fontSize: 16), ), ), ),
-        SizedBox(height: 20),
-      ], ), ), ), );
+              SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
+
 // ================================================================
 // MEMORIAL JOURNAL PAGE (Using "Load More" Pagination)
 // ================================================================
@@ -1383,43 +2511,420 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
   Future<void> _fetchJournalEntries({bool isInitialLoad = false}) async {
     if (_isFetchingMore || (!isInitialLoad && !_hasMoreData)) return;
     if (!mounted) return;
-    setState(() { if (isInitialLoad) { _isLoading = true; _currentPage = 1; _allEntries.clear(); _filteredEntries.clear(); _hasMoreData = true; } else { _isFetchingMore = true; } _error = null; });
+    setState(() {
+      if (isInitialLoad) {
+        _isLoading = true;
+        _currentPage = 1;
+        _allEntries.clear();
+        _filteredEntries.clear();
+        _hasMoreData = true;
+      } else {
+        _isFetchingMore = true;
+      }
+      _error = null;
+    });
     int pageToFetch = isInitialLoad ? 1 : _currentPage + 1;
     try {
-      SharedPreferences prefs = await SharedPreferences.getInstance(); String? token = prefs.getString('auth_token'); if (token == null || token.isEmpty) { throw Exception('Authentication required.'); }
-      final url = Uri.parse('$baseUrl/api/API/getdataJM?page=$pageToFetch&pageSize=$_pageSize'); final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', };
-      final response = await http.get(url, headers: headers).timeout(Duration(seconds: 45)); if (!mounted) return;
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required.');
+      }
+      final url = Uri.parse(
+        '$baseUrl/api/API/getdataJM?page=$pageToFetch&pageSize=$_pageSize',
+      );
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(Duration(seconds: 45));
+      if (!mounted) return;
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes)); final List<MemorialJournalEntry> newEntries = data.map((jsonItem) => MemorialJournalEntry.fromJson(jsonItem)).toList();
-        if (newEntries.length < _pageSize) { _hasMoreData = false; }
-        _allEntries.addAll(newEntries); _currentPage = pageToFetch; _applyFilter();
-      } else if (response.statusCode == 401 || response.statusCode == 403) { throw Exception('Session expired or unauthorized (Code: ${response.statusCode}).'); } else { throw Exception('Failed to load data. Status Code: ${response.statusCode}\nBody: ${response.body}'); }
-    } on TimeoutException catch (e) { _error = e.message ?? "Request timed out."; } on http.ClientException catch (e) { _error = "Network error: ${e.message}."; } catch (e) { print("Error (Page $pageToFetch): $e"); _error = "An unexpected error occurred: ${e.toString()}"; } finally { if (mounted) { setState(() { _isLoading = false; _isFetchingMore = false; }); } }
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        final List<MemorialJournalEntry> newEntries =
+            data
+                .map((jsonItem) => MemorialJournalEntry.fromJson(jsonItem))
+                .toList();
+        if (newEntries.length < _pageSize) {
+          _hasMoreData = false;
+        }
+        _allEntries.addAll(newEntries);
+        _currentPage = pageToFetch;
+        _applyFilter();
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        throw Exception(
+          'Session expired or unauthorized (Code: ${response.statusCode}).',
+        );
+      } else {
+        throw Exception(
+          'Failed to load data. Status Code: ${response.statusCode}\nBody: ${response.body}',
+        );
+      }
+    } on TimeoutException catch (e) {
+      _error = e.message ?? "Request timed out.";
+    } on http.ClientException catch (e) {
+      _error = "Network error: ${e.message}.";
+    } catch (e) {
+      print("Error (Page $pageToFetch): $e");
+      _error = "An unexpected error occurred: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isFetchingMore = false;
+        });
+      }
+    }
   }
 
   Future<void> _selectDate(BuildContext context, bool isStartDate) async {
-    final DateTime initial = (isStartDate ? _startDate : _endDate) ?? DateTime.now(); final DateTime? picked = await showDatePicker( context: context, initialDate: initial, firstDate: DateTime(2000), lastDate: DateTime(2101), );
-    if (picked != null && mounted) { setState(() { if (isStartDate) { _startDate = picked; } else { _endDate = DateTime(picked.year, picked.month, picked.day, 23, 59, 59, 999); } _applyFilter(); }); }
+    final DateTime initial =
+        (isStartDate ? _startDate : _endDate) ?? DateTime.now();
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        if (isStartDate) {
+          _startDate = picked;
+        } else {
+          _endDate = DateTime(
+            picked.year,
+            picked.month,
+            picked.day,
+            23,
+            59,
+            59,
+            999,
+          );
+        }
+        _applyFilter();
+      });
+    }
   }
 
-  void _applyFilter() { if (!mounted) return; setState(() { _filteredEntries = _allEntries.where((entry) { bool passesStartDate = _startDate == null || !entry.transDate.isBefore(_startDate!); bool passesEndDate = _endDate == null || !entry.transDate.isAfter(_endDate!); return passesStartDate && passesEndDate; }).toList(); _applySort(); }); }
-  void _clearFilter() { if (!mounted) return; setState(() { _startDate = null; _endDate = null; _filteredEntries = List.from(_allEntries); _applySort(); }); }
-  void _onSort(int columnIndex, bool ascending) { if (!mounted) return; setState(() { _sortColumnIndex = columnIndex; _sortAscending = ascending; _applySort(); }); }
-  void _applySort() { _filteredEntries.sort((a, b) { int compareResult = 0; switch (_sortColumnIndex) { case 0: compareResult = a.transDate.compareTo(b.transDate); break; case 1: compareResult = a.transNo.compareTo(b.transNo); break; case 2: compareResult = a.description.compareTo(b.description); break; case 3: compareResult = a.debit.compareTo(b.debit); break; case 4: compareResult = a.credit.compareTo(b.credit); break; } return _sortAscending ? compareResult : -compareResult; }); }
+  void _applyFilter() {
+    if (!mounted) return;
+    setState(() {
+      _filteredEntries =
+          _allEntries.where((entry) {
+            bool passesStartDate =
+                _startDate == null || !entry.transDate.isBefore(_startDate!);
+            bool passesEndDate =
+                _endDate == null || !entry.transDate.isAfter(_endDate!);
+            return passesStartDate && passesEndDate;
+          }).toList();
+      _applySort();
+    });
+  }
+
+  void _clearFilter() {
+    if (!mounted) return;
+    setState(() {
+      _startDate = null;
+      _endDate = null;
+      _filteredEntries = List.from(_allEntries);
+      _applySort();
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    if (!mounted) return;
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applySort();
+    });
+  }
+
+  void _applySort() {
+    _filteredEntries.sort((a, b) {
+      int compareResult = 0;
+      switch (_sortColumnIndex) {
+        case 0:
+          compareResult = a.transDate.compareTo(b.transDate);
+          break;
+        case 1:
+          compareResult = a.transNo.compareTo(b.transNo);
+          break;
+        case 2:
+          compareResult = a.description.compareTo(b.description);
+          break;
+        case 3:
+          compareResult = a.debit.compareTo(b.debit);
+          break;
+        case 4:
+          compareResult = a.credit.compareTo(b.credit);
+          break;
+      }
+      return _sortAscending ? compareResult : -compareResult;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar( title: Text('Memorial Journal'), actions: [ IconButton( icon: Icon(Icons.refresh), tooltip: 'Refresh Data', onPressed: (_isLoading || _isFetchingMore) ? null : () => _fetchJournalEntries(isInitialLoad: true), ), ], ),
+      appBar: AppBar(
+        title: Text('Memorial Journal'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            tooltip: 'Refresh Data',
+            onPressed:
+                (_isLoading || _isFetchingMore)
+                    ? null
+                    : () => _fetchJournalEntries(isInitialLoad: true),
+          ),
+        ],
+      ),
       body: _buildBody(),
-      floatingActionButton: FloatingActionButton( onPressed: () { Navigator.push( context, MaterialPageRoute(builder: (context) => AddMemorialJournalEntryPage()), ).then((value) { if (value == true) { _fetchJournalEntries(isInitialLoad: true); } }); }, tooltip: 'Add New Entry', child: Icon(Icons.add), backgroundColor: Theme.of(context).primaryColor, ), );
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AddMemorialJournalEntryPage(),
+            ),
+          ).then((value) {
+            if (value == true) {
+              _fetchJournalEntries(isInitialLoad: true);
+            }
+          });
+        },
+        tooltip: 'Add New Entry',
+        child: Icon(Icons.add),
+        backgroundColor: Theme.of(context).primaryColor,
+      ),
+    );
   }
 
-  Widget _buildBody() { if (_isLoading) { return Center(child: CircularProgressIndicator()); } if (_error != null && _allEntries.isEmpty) { return _buildErrorWidget(_error!); } return Column( children: [ _buildDateFilterRow(context), if (_error != null && _allEntries.isNotEmpty) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0), child: Text("Error loading more: $_error", style: TextStyle(color: Colors.red)), ), Expanded( child: ListView( children: [ _buildDataTable(), _buildPaginationControls(), ], ), ), ], ); }
-  Widget _buildDateFilterRow(BuildContext context) { final DateFormat formatter = DateFormat('dd MMM yyyy'); final Color primaryColor = Theme.of(context).primaryColor; return Padding( padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0), child: Wrap( spacing: 8.0, runSpacing: 0.0, alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: [ TextButton.icon( style: TextButton.styleFrom(visualDensity: VisualDensity.compact), icon: Icon(Icons.calendar_today, size: 18, color: primaryColor), label: Text(_startDate == null ? 'From Date' : formatter.format(_startDate!), style: TextStyle(color: primaryColor)), onPressed: () => _selectDate(context, true), ), TextButton.icon( style: TextButton.styleFrom(visualDensity: VisualDensity.compact), icon: Icon(Icons.calendar_today, size: 18, color: primaryColor), label: Text(_endDate == null ? 'To Date' : formatter.format(_endDate!), style: TextStyle(color: primaryColor)), onPressed: () => _selectDate(context, false), ), if (_startDate != null || _endDate != null) Padding( padding: const EdgeInsets.only(left: 4.0), child: ActionChip( avatar: Icon(Icons.clear, size: 16, color: Colors.black54), label: Text('Clear Filter', style: TextStyle(fontSize: 12, color: Colors.black87)), onPressed: _clearFilter, backgroundColor: Colors.grey[200], visualDensity: VisualDensity.compact, padding: EdgeInsets.symmetric(horizontal: 4.0), ), ), ], ), ); }
-  Widget _buildDataTable() { if (_filteredEntries.isEmpty && !_isLoading) { return Center(child: Padding( padding: const EdgeInsets.all(40.0), child: Text( 'No entries found${(_startDate !=null || _endDate !=null) ? ' for the selected date range': ''}.', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey[600]), ), ) ); } final List<DataColumn> columns = [ DataColumn(label: Text('Date'), tooltip: 'Transaction Date', onSort: _onSort), DataColumn(label: Text('Trans No'), tooltip: 'Transaction Number', onSort: _onSort), DataColumn(label: Text('Description'), tooltip: 'Transaction Description', onSort: _onSort), DataColumn(label: Text('Debit'), tooltip: 'Debit Amount', numeric: true, onSort: _onSort), DataColumn(label: Text('Credit'), tooltip: 'Credit Amount', numeric: true, onSort: _onSort), ]; final List<DataRow> rows = _filteredEntries.map((entry) { return DataRow( cells: [ DataCell(Text(entry.formattedDate)), DataCell(Text(entry.transNo)), DataCell(Text(entry.description)), DataCell(Text(entry.formattedDebit)), DataCell(Text(entry.formattedCredit)), ],); }).toList(); return SingleChildScrollView( scrollDirection: Axis.horizontal, child: DataTable( columns: columns, rows: rows, sortColumnIndex: _sortColumnIndex, sortAscending: _sortAscending, showCheckboxColumn: false, columnSpacing: 20, headingRowHeight: 40, dataRowMinHeight: 48, dataRowMaxHeight: 56, headingTextStyle: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey[800]), headingRowColor: MaterialStateProperty.resolveWith<Color?>((_) => Colors.blueGrey[50]), ), ); }
-  Widget _buildPaginationControls() { if (_hasMoreData) { return Padding( padding: const EdgeInsets.symmetric(vertical: 16.0), child: Center( child: _isFetchingMore ? CircularProgressIndicator() : ElevatedButton( onPressed: () => _fetchJournalEntries(), child: Text('Load More'), ), ), ); } else if (_allEntries.isNotEmpty) { return Padding( padding: const EdgeInsets.symmetric(vertical: 24.0), child: Center(child: Text("End of list", style: TextStyle(color: Colors.grey))), ); } else { return SizedBox.shrink(); } }
-  Widget _buildErrorWidget(String errorMessage) { return Center( child: Padding( padding: const EdgeInsets.all(20.0), child: Column( mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center, children: [ Icon(Icons.error_outline, color: Colors.red.shade700, size: 60), SizedBox(height: 15), Text('Failed to Load Data', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red.shade900), textAlign: TextAlign.center, ), SizedBox(height: 10), Text(errorMessage, textAlign: TextAlign.center, style: TextStyle(color: Colors.black87),), SizedBox(height: 25), ElevatedButton.icon( icon: Icon(Icons.refresh), label: Text('Retry'), onPressed: () => _fetchJournalEntries(isInitialLoad: true), style: ElevatedButton.styleFrom(foregroundColor: Colors.white, backgroundColor: Theme.of(context).primaryColor), ) ], ), )); }
+  Widget _buildBody() {
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator());
+    }
+    if (_error != null && _allEntries.isEmpty) {
+      return _buildErrorWidget(_error!);
+    }
+    return Column(
+      children: [
+        _buildDateFilterRow(context),
+        if (_error != null && _allEntries.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              vertical: 8.0,
+              horizontal: 16.0,
+            ),
+            child: Text(
+              "Error loading more: $_error",
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        Expanded(
+          child: ListView(
+            children: [_buildDataTable(), _buildPaginationControls()],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateFilterRow(BuildContext context) {
+    final DateFormat formatter = DateFormat('dd MMM yyyy');
+    final Color primaryColor = Theme.of(context).primaryColor;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      child: Wrap(
+        spacing: 8.0,
+        runSpacing: 0.0,
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          TextButton.icon(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            icon: Icon(Icons.calendar_today, size: 18, color: primaryColor),
+            label: Text(
+              _startDate == null ? 'From Date' : formatter.format(_startDate!),
+              style: TextStyle(color: primaryColor),
+            ),
+            onPressed: () => _selectDate(context, true),
+          ),
+          TextButton.icon(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            icon: Icon(Icons.calendar_today, size: 18, color: primaryColor),
+            label: Text(
+              _endDate == null ? 'To Date' : formatter.format(_endDate!),
+              style: TextStyle(color: primaryColor),
+            ),
+            onPressed: () => _selectDate(context, false),
+          ),
+          if (_startDate != null || _endDate != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 4.0),
+              child: ActionChip(
+                avatar: Icon(Icons.clear, size: 16, color: Colors.black54),
+                label: Text(
+                  'Clear Filter',
+                  style: TextStyle(fontSize: 12, color: Colors.black87),
+                ),
+                onPressed: _clearFilter,
+                backgroundColor: Colors.grey[200],
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.symmetric(horizontal: 4.0),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDataTable() {
+    if (_filteredEntries.isEmpty && !_isLoading) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40.0),
+          child: Text(
+            'No entries found${(_startDate != null || _endDate != null) ? ' for the selected date range' : ''}.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+          ),
+        ),
+      );
+    }
+    final List<DataColumn> columns = [
+      DataColumn(
+        label: Text('Date'),
+        tooltip: 'Transaction Date',
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Trans No'),
+        tooltip: 'Transaction Number',
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Description'),
+        tooltip: 'Transaction Description',
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Debit'),
+        tooltip: 'Debit Amount',
+        numeric: true,
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Credit'),
+        tooltip: 'Credit Amount',
+        numeric: true,
+        onSort: _onSort,
+      ),
+    ];
+    final List<DataRow> rows =
+        _filteredEntries.map((entry) {
+          return DataRow(
+            cells: [
+              DataCell(Text(entry.formattedDate)),
+              DataCell(Text(entry.transNo)),
+              DataCell(Text(entry.description)),
+              DataCell(Text(entry.formattedDebit)),
+              DataCell(Text(entry.formattedCredit)),
+            ],
+          );
+        }).toList();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columns: columns,
+        rows: rows,
+        sortColumnIndex: _sortColumnIndex,
+        sortAscending: _sortAscending,
+        showCheckboxColumn: false,
+        columnSpacing: 20,
+        headingRowHeight: 40,
+        dataRowMinHeight: 48,
+        dataRowMaxHeight: 56,
+        headingTextStyle: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: Colors.blueGrey[800],
+        ),
+        headingRowColor: MaterialStateProperty.resolveWith<Color?>(
+          (_) => Colors.blueGrey[50],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaginationControls() {
+    if (_hasMoreData) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16.0),
+        child: Center(
+          child:
+              _isFetchingMore
+                  ? CircularProgressIndicator()
+                  : ElevatedButton(
+                    onPressed: () => _fetchJournalEntries(),
+                    child: Text('Load More'),
+                  ),
+        ),
+      );
+    } else if (_allEntries.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24.0),
+        child: Center(
+          child: Text("End of list", style: TextStyle(color: Colors.grey)),
+        ),
+      );
+    } else {
+      return SizedBox.shrink();
+    }
+  }
+
+  Widget _buildErrorWidget(String errorMessage) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: Colors.red.shade700, size: 60),
+            SizedBox(height: 15),
+            Text(
+              'Failed to Load Data',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.red.shade900,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 10),
+            Text(
+              errorMessage,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.black87),
+            ),
+            SizedBox(height: 25),
+            ElevatedButton.icon(
+              icon: Icon(Icons.refresh),
+              label: Text('Retry'),
+              onPressed: () => _fetchJournalEntries(isInitialLoad: true),
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).primaryColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 // ================================================================
 // END OF MEMORIAL JOURNAL PAGE
@@ -1457,42 +2962,162 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
   Future<void> _fetchJournalEntries({bool isInitialLoad = false}) async {
     if (_isFetchingMore || (!isInitialLoad && !_hasMoreData)) return;
     if (!mounted) return;
-    setState(() { if (isInitialLoad) { _isLoading = true; _currentPage = 1; _allEntries.clear(); _filteredEntries.clear(); _hasMoreData = true; } else { _isFetchingMore = true; } _error = null; });
+    setState(() {
+      if (isInitialLoad) {
+        _isLoading = true;
+        _currentPage = 1;
+        _allEntries.clear();
+        _filteredEntries.clear();
+        _hasMoreData = true;
+      } else {
+        _isFetchingMore = true;
+      }
+      _error = null;
+    });
     int pageToFetch = isInitialLoad ? 1 : _currentPage + 1;
     try {
-      SharedPreferences prefs = await SharedPreferences.getInstance(); String? token = prefs.getString('auth_token'); if (token == null || token.isEmpty) { throw Exception('Authentication required.'); }
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required.');
+      }
       // --- Use Sales endpoint: getdataJPJ ---
-      final url = Uri.parse('$baseUrl/api/API/getdataJPN?page=$pageToFetch&pageSize=$_pageSize');
-      final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', };
-      final response = await http.get(url, headers: headers).timeout(Duration(seconds: 45)); if (!mounted) return;
+      final url = Uri.parse(
+        '$baseUrl/api/API/getdataJPN?page=$pageToFetch&pageSize=$_pageSize',
+      );
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(Duration(seconds: 45));
+      if (!mounted) return;
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
         // --- CORRECTED: Map to SalesJournalEntry ---
-        final List<SalesJournalEntry> newEntries = data.map((jsonItem) => SalesJournalEntry.fromJson(jsonItem)).toList();
+        final List<SalesJournalEntry> newEntries =
+            data
+                .map((jsonItem) => SalesJournalEntry.fromJson(jsonItem))
+                .toList();
         // ------------------------------------------
-        if (newEntries.length < _pageSize) { _hasMoreData = false; }
-        _allEntries.addAll(newEntries); _currentPage = pageToFetch; _applyFilter();
-      } else if (response.statusCode == 401 || response.statusCode == 403) { throw Exception('Session expired or unauthorized (Code: ${response.statusCode}).'); } else { throw Exception('Failed to load data. Status Code: ${response.statusCode}\nBody: ${response.body}'); }
-    } on TimeoutException catch (e) { _error = e.message ?? "Request timed out."; } on http.ClientException catch (e) { _error = "Network error: ${e.message}."; } catch (e) { print("Error fetching Sales Journal (Page $pageToFetch): $e"); _error = "An unexpected error occurred: ${e.toString()}"; } finally { if (mounted) { setState(() { _isLoading = false; _isFetchingMore = false; }); } }
+        if (newEntries.length < _pageSize) {
+          _hasMoreData = false;
+        }
+        _allEntries.addAll(newEntries);
+        _currentPage = pageToFetch;
+        _applyFilter();
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        throw Exception(
+          'Session expired or unauthorized (Code: ${response.statusCode}).',
+        );
+      } else {
+        throw Exception(
+          'Failed to load data. Status Code: ${response.statusCode}\nBody: ${response.body}',
+        );
+      }
+    } on TimeoutException catch (e) {
+      _error = e.message ?? "Request timed out.";
+    } on http.ClientException catch (e) {
+      _error = "Network error: ${e.message}.";
+    } catch (e) {
+      print("Error fetching Sales Journal (Page $pageToFetch): $e");
+      _error = "An unexpected error occurred: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isFetchingMore = false;
+        });
+      }
+    }
   }
 
   // --- Filtering/Clearing (No change needed conceptually, types are now correct) ---
-  Future<void> _selectDate(BuildContext context, bool isStartDate) async { final DateTime initial = (isStartDate ? _startDate : _endDate) ?? DateTime.now(); final DateTime? picked = await showDatePicker( context: context, initialDate: initial, firstDate: DateTime(2000), lastDate: DateTime(2101), ); if (picked != null && mounted) { setState(() { if (isStartDate) { _startDate = picked; } else { _endDate = DateTime(picked.year, picked.month, picked.day, 23, 59, 59, 999); } _applyFilter(); }); } }
-  void _applyFilter() { if (!mounted) return; setState(() { _filteredEntries = _allEntries.where((entry) { bool passesStartDate = _startDate == null || !entry.transDate.isBefore(_startDate!); bool passesEndDate = _endDate == null || !entry.transDate.isAfter(_endDate!); return passesStartDate && passesEndDate; }).toList(); _applySort(); }); }
-  void _clearFilter() { if (!mounted) return; setState(() { _startDate = null; _endDate = null; _filteredEntries = List.from(_allEntries); _applySort(); }); }
-  void _onSort(int columnIndex, bool ascending) { if (!mounted) return; setState(() { _sortColumnIndex = columnIndex; _sortAscending = ascending; _applySort(); }); }
+  Future<void> _selectDate(BuildContext context, bool isStartDate) async {
+    final DateTime initial =
+        (isStartDate ? _startDate : _endDate) ?? DateTime.now();
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        if (isStartDate) {
+          _startDate = picked;
+        } else {
+          _endDate = DateTime(
+            picked.year,
+            picked.month,
+            picked.day,
+            23,
+            59,
+            59,
+            999,
+          );
+        }
+        _applyFilter();
+      });
+    }
+  }
+
+  void _applyFilter() {
+    if (!mounted) return;
+    setState(() {
+      _filteredEntries =
+          _allEntries.where((entry) {
+            bool passesStartDate =
+                _startDate == null || !entry.transDate.isBefore(_startDate!);
+            bool passesEndDate =
+                _endDate == null || !entry.transDate.isAfter(_endDate!);
+            return passesStartDate && passesEndDate;
+          }).toList();
+      _applySort();
+    });
+  }
+
+  void _clearFilter() {
+    if (!mounted) return;
+    setState(() {
+      _startDate = null;
+      _endDate = null;
+      _filteredEntries = List.from(_allEntries);
+      _applySort();
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    if (!mounted) return;
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applySort();
+    });
+  }
 
   // --- CORRECTED Sort Logic for SalesJournalEntry ---
   void _applySort() {
     _filteredEntries.sort((a, b) {
       int compareResult = 0;
       switch (_sortColumnIndex) {
-        case 0: compareResult = a.transDate.compareTo(b.transDate); break;
-        case 1: compareResult = a.transNo.compareTo(b.transNo); break;
-        case 2: compareResult = a.description.compareTo(b.description); break;
-      // --- Use Sales fields: debit and credit ---
-        case 3: compareResult = a.formattedValue.compareTo(b.formattedValue); break;
-        case 4: compareResult = a.formattedValueDisc.compareTo(b.formattedValueDisc); break;
+        case 0:
+          compareResult = a.transDate.compareTo(b.transDate);
+          break;
+        case 1:
+          compareResult = a.transNo.compareTo(b.transNo);
+          break;
+        case 2:
+          compareResult = a.description.compareTo(b.description);
+          break;
+        // --- Use Sales fields: debit and credit ---
+        case 3:
+          compareResult = a.formattedValue.compareTo(b.formattedValue);
+          break;
+        case 4:
+          compareResult = a.formattedValueDisc.compareTo(b.formattedValueDisc);
+          break;
       }
       return _sortAscending ? compareResult : -compareResult;
     });
@@ -1503,13 +3128,33 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       // --- CORRECTED Title ---
-      appBar: AppBar( title: Text('Sales Journal'), actions: [ IconButton( icon: Icon(Icons.refresh), tooltip: 'Refresh Data', onPressed: (_isLoading || _isFetchingMore) ? null : () => _fetchJournalEntries(isInitialLoad: true), ), ], ),
+      appBar: AppBar(
+        title: Text('Sales Journal'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            tooltip: 'Refresh Data',
+            onPressed:
+                (_isLoading || _isFetchingMore)
+                    ? null
+                    : () => _fetchJournalEntries(isInitialLoad: true),
+          ),
+        ],
+      ),
       body: _buildBody(),
       // --- CORRECTED FAB for Sales ---
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.push( context, MaterialPageRoute(builder: (context) => AddSalesJournalEntryPage()), // Navigate to Add Sales page
-          ).then((value) { if (value == true) { _fetchJournalEntries(isInitialLoad: true); } });
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AddSalesJournalEntryPage(),
+            ), // Navigate to Add Sales page
+          ).then((value) {
+            if (value == true) {
+              _fetchJournalEntries(isInitialLoad: true);
+            }
+          });
         },
         tooltip: 'Add New Sales Entry', // Correct tooltip
         child: Icon(Icons.add_shopping_cart), // Maybe different icon?
@@ -1519,197 +3164,1421 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
     );
   }
 
-  Widget _buildBody() { if (_isLoading) { return Center(child: CircularProgressIndicator()); } if (_error != null && _allEntries.isEmpty) { return _buildErrorWidget(_error!); } return Column( children: [ _buildDateFilterRow(context), if (_error != null && _allEntries.isNotEmpty) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0), child: Text("Error loading more: $_error", style: TextStyle(color: Colors.red)), ), Expanded( child: ListView( children: [ _buildDataTable(), _buildPaginationControls(), ], ), ), ], ); }
-  Widget _buildDateFilterRow(BuildContext context) { final DateFormat formatter = DateFormat('dd MMM yyyy'); final Color primaryColor = Theme.of(context).primaryColor; return Padding( padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0), child: Wrap( spacing: 8.0, runSpacing: 0.0, alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: [ TextButton.icon( style: TextButton.styleFrom(visualDensity: VisualDensity.compact), icon: Icon(Icons.calendar_today, size: 18, color: primaryColor), label: Text(_startDate == null ? 'From Date' : formatter.format(_startDate!), style: TextStyle(color: primaryColor)), onPressed: () => _selectDate(context, true), ), TextButton.icon( style: TextButton.styleFrom(visualDensity: VisualDensity.compact), icon: Icon(Icons.calendar_today, size: 18, color: primaryColor), label: Text(_endDate == null ? 'To Date' : formatter.format(_endDate!), style: TextStyle(color: primaryColor)), onPressed: () => _selectDate(context, false), ), if (_startDate != null || _endDate != null) Padding( padding: const EdgeInsets.only(left: 4.0), child: ActionChip( avatar: Icon(Icons.clear, size: 16, color: Colors.black54), label: Text('Clear Filter', style: TextStyle(fontSize: 12, color: Colors.black87)), onPressed: _clearFilter, backgroundColor: Colors.grey[200], visualDensity: VisualDensity.compact, padding: EdgeInsets.symmetric(horizontal: 4.0), ), ), ], ), ); }
+  Widget _buildBody() {
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator());
+    }
+    if (_error != null && _allEntries.isEmpty) {
+      return _buildErrorWidget(_error!);
+    }
+    return Column(
+      children: [
+        _buildDateFilterRow(context),
+        if (_error != null && _allEntries.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              vertical: 8.0,
+              horizontal: 16.0,
+            ),
+            child: Text(
+              "Error loading more: $_error",
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        Expanded(
+          child: ListView(
+            children: [_buildDataTable(), _buildPaginationControls()],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateFilterRow(BuildContext context) {
+    final DateFormat formatter = DateFormat('dd MMM yyyy');
+    final Color primaryColor = Theme.of(context).primaryColor;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      child: Wrap(
+        spacing: 8.0,
+        runSpacing: 0.0,
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          TextButton.icon(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            icon: Icon(Icons.calendar_today, size: 18, color: primaryColor),
+            label: Text(
+              _startDate == null ? 'From Date' : formatter.format(_startDate!),
+              style: TextStyle(color: primaryColor),
+            ),
+            onPressed: () => _selectDate(context, true),
+          ),
+          TextButton.icon(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            icon: Icon(Icons.calendar_today, size: 18, color: primaryColor),
+            label: Text(
+              _endDate == null ? 'To Date' : formatter.format(_endDate!),
+              style: TextStyle(color: primaryColor),
+            ),
+            onPressed: () => _selectDate(context, false),
+          ),
+          if (_startDate != null || _endDate != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 4.0),
+              child: ActionChip(
+                avatar: Icon(Icons.clear, size: 16, color: Colors.black54),
+                label: Text(
+                  'Clear Filter',
+                  style: TextStyle(fontSize: 12, color: Colors.black87),
+                ),
+                onPressed: _clearFilter,
+                backgroundColor: Colors.grey[200],
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.symmetric(horizontal: 4.0),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
   // --- CORRECTED DataTable for SalesJournalEntry ---
   Widget _buildDataTable() {
-    if (_filteredEntries.isEmpty && !_isLoading) { return Center(child: Padding( padding: const EdgeInsets.all(40.0), child: Text( 'No entries found${(_startDate !=null || _endDate !=null) ? ' for the selected date range': ''}.', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey[600]), ), ) ); }
+    if (_filteredEntries.isEmpty && !_isLoading) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40.0),
+          child: Text(
+            'No entries found${(_startDate != null || _endDate != null) ? ' for the selected date range' : ''}.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+          ),
+        ),
+      );
+    }
     // --- Adjust Column Headers ---
     final List<DataColumn> columns = [
-      DataColumn(label: Text('Date'), tooltip: 'Transaction Date', onSort: _onSort),
-      DataColumn(label: Text('Trans No'), tooltip: 'Transaction Number', onSort: _onSort),
-      DataColumn(label: Text('Description'), tooltip: 'Transaction Description', onSort: _onSort),
-      DataColumn(label: Text('Value'), tooltip: 'Debit Amount', numeric: true, onSort: _onSort), // Header uses 'Debit'
-      DataColumn(label: Text('Value Disc'), tooltip: 'Credit Amount', numeric: true, onSort: _onSort), // Header uses 'Credit'
+      DataColumn(
+        label: Text('Date'),
+        tooltip: 'Transaction Date',
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Trans No'),
+        tooltip: 'Transaction Number',
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Description'),
+        tooltip: 'Transaction Description',
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Value'),
+        tooltip: 'Debit Amount',
+        numeric: true,
+        onSort: _onSort,
+      ), // Header uses 'Debit'
+      DataColumn(
+        label: Text('Value Disc'),
+        tooltip: 'Credit Amount',
+        numeric: true,
+        onSort: _onSort,
+      ), // Header uses 'Credit'
       // You might add columns for discount amounts if needed
     ];
     // --- Map to correct fields for display ---
-    final List<DataRow> rows = _filteredEntries.map((entry) {
-      return DataRow( cells: [
-        DataCell(Text(entry.formattedDate)),
-        DataCell(Text(entry.transNo)),
-        DataCell(Text(entry.description)),
-        DataCell(Text(entry.formattedValue)), // Use formattedDebit
-        DataCell(Text(entry.formattedValueDisc)), // Use formattedCredit
-      ],);
-    }).toList();
+    final List<DataRow> rows =
+        _filteredEntries.map((entry) {
+          return DataRow(
+            cells: [
+              DataCell(Text(entry.formattedDate)),
+              DataCell(Text(entry.transNo)),
+              DataCell(Text(entry.description)),
+              DataCell(Text(entry.formattedValue)), // Use formattedDebit
+              DataCell(Text(entry.formattedValueDisc)), // Use formattedCredit
+            ],
+          );
+        }).toList();
     // -----------------------------------------
-    return SingleChildScrollView( scrollDirection: Axis.horizontal, child: DataTable( columns: columns, rows: rows, sortColumnIndex: _sortColumnIndex, sortAscending: _sortAscending, showCheckboxColumn: false, columnSpacing: 20, headingRowHeight: 40, dataRowMinHeight: 48, dataRowMaxHeight: 56, headingTextStyle: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey[800]), headingRowColor: MaterialStateProperty.resolveWith<Color?>((_) => Colors.blueGrey[50]), ), );
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columns: columns,
+        rows: rows,
+        sortColumnIndex: _sortColumnIndex,
+        sortAscending: _sortAscending,
+        showCheckboxColumn: false,
+        columnSpacing: 20,
+        headingRowHeight: 40,
+        dataRowMinHeight: 48,
+        dataRowMaxHeight: 56,
+        headingTextStyle: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: Colors.blueGrey[800],
+        ),
+        headingRowColor: MaterialStateProperty.resolveWith<Color?>(
+          (_) => Colors.blueGrey[50],
+        ),
+      ),
+    );
   }
   // -----------------------------------------
 
-  Widget _buildPaginationControls() { if (_hasMoreData) { return Padding( padding: const EdgeInsets.symmetric(vertical: 16.0), child: Center( child: _isFetchingMore ? CircularProgressIndicator() : ElevatedButton( onPressed: () => _fetchJournalEntries(), child: Text('Load More'), ), ), ); } else if (_allEntries.isNotEmpty) { return Padding( padding: const EdgeInsets.symmetric(vertical: 24.0), child: Center(child: Text("End of list", style: TextStyle(color: Colors.grey))), ); } else { return SizedBox.shrink(); } }
-  Widget _buildErrorWidget(String errorMessage) { return Center( child: Padding( padding: const EdgeInsets.all(20.0), child: Column( mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center, children: [ Icon(Icons.error_outline, color: Colors.red.shade700, size: 60), SizedBox(height: 15), Text('Failed to Load Data', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red.shade900), textAlign: TextAlign.center, ), SizedBox(height: 10), Text(errorMessage, textAlign: TextAlign.center, style: TextStyle(color: Colors.black87),), SizedBox(height: 25), ElevatedButton.icon( icon: Icon(Icons.refresh), label: Text('Retry'), onPressed: () => _fetchJournalEntries(isInitialLoad: true), style: ElevatedButton.styleFrom(foregroundColor: Colors.white, backgroundColor: Theme.of(context).primaryColor), ) ], ), )); }
+  Widget _buildPaginationControls() {
+    if (_hasMoreData) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16.0),
+        child: Center(
+          child:
+              _isFetchingMore
+                  ? CircularProgressIndicator()
+                  : ElevatedButton(
+                    onPressed: () => _fetchJournalEntries(),
+                    child: Text('Load More'),
+                  ),
+        ),
+      );
+    } else if (_allEntries.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24.0),
+        child: Center(
+          child: Text("End of list", style: TextStyle(color: Colors.grey)),
+        ),
+      );
+    } else {
+      return SizedBox.shrink();
+    }
+  }
+
+  Widget _buildErrorWidget(String errorMessage) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: Colors.red.shade700, size: 60),
+            SizedBox(height: 15),
+            Text(
+              'Failed to Load Data',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.red.shade900,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 10),
+            Text(
+              errorMessage,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.black87),
+            ),
+            SizedBox(height: 25),
+            ElevatedButton.icon(
+              icon: Icon(Icons.refresh),
+              label: Text('Retry'),
+              onPressed: () => _fetchJournalEntries(isInitialLoad: true),
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).primaryColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
+
 class PurchasingJournalPage extends StatefulWidget {
   @override
   _PurchasingJournalPageState createState() => _PurchasingJournalPageState();
 }
+
 class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
-  List<PurchaseJournalEntry> _allEntries = []; List<PurchaseJournalEntry> _filteredEntries = []; bool _isLoading = true; bool _isFetchingMore = false; String? _error; DateTime? _startDate; DateTime? _endDate; int _currentPage = 1; final int _pageSize = 10; bool _hasMoreData = true; int _sortColumnIndex = 0; bool _sortAscending = true;
-  @override void initState() { super.initState(); _fetchJournalEntries(isInitialLoad: true); }
-  Future<void> _fetchJournalEntries({bool isInitialLoad = false}) async { if (_isFetchingMore || (!isInitialLoad && !_hasMoreData)) return; if (!mounted) return; setState(() { if (isInitialLoad) { _isLoading = true; _currentPage = 1; _allEntries.clear(); _filteredEntries.clear(); _hasMoreData = true; } else { _isFetchingMore = true; } _error = null; }); int pageToFetch = isInitialLoad ? 1 : _currentPage + 1; try { SharedPreferences prefs = await SharedPreferences.getInstance(); String? token = prefs.getString('auth_token'); if (token == null || token.isEmpty) { throw Exception('Authentication required.'); } final url = Uri.parse('$baseUrl/api/API/getdataJPB?page=$pageToFetch&pageSize=$_pageSize'); final headers = { 'Content-Type': 'application/json; charset=UTF-8', 'Authorization': 'Bearer $token', }; final response = await http.get(url, headers: headers).timeout(Duration(seconds: 45)); if (!mounted) return; if (response.statusCode == 200) { final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes)); final List<PurchaseJournalEntry> newEntries = data.map((jsonItem) => PurchaseJournalEntry.fromJson(jsonItem)).toList(); if (newEntries.length < _pageSize) { _hasMoreData = false; } _allEntries.addAll(newEntries); _currentPage = pageToFetch; _applyFilter(); } else if (response.statusCode == 401 || response.statusCode == 403) { throw Exception('Session expired or unauthorized (Code: ${response.statusCode}).'); } else { throw Exception('Failed to load data. Status Code: ${response.statusCode}\nBody: ${response.body}'); } } on TimeoutException catch (e) { _error = e.message ?? "Request timed out."; } on http.ClientException catch (e) { _error = "Network error: ${e.message}."; } catch (e) { print("Error (Page $pageToFetch): $e"); _error = "An unexpected error occurred: ${e.toString()}"; } finally { if (mounted) { setState(() { _isLoading = false; _isFetchingMore = false; }); } } }
-  Future<void> _selectDate(BuildContext context, bool isStartDate) async { final DateTime initial = (isStartDate ? _startDate : _endDate) ?? DateTime.now(); final DateTime? picked = await showDatePicker( context: context, initialDate: initial, firstDate: DateTime(2000), lastDate: DateTime(2101), ); if (picked != null && mounted) { setState(() { if (isStartDate) { _startDate = picked; } else { _endDate = DateTime(picked.year, picked.month, picked.day, 23, 59, 59, 999); } _applyFilter(); }); } }
-  void _applyFilter() { if (!mounted) return; setState(() { _filteredEntries = _allEntries.where((entry) { bool passesStartDate = _startDate == null || !entry.transDate.isBefore(_startDate!); bool passesEndDate = _endDate == null || !entry.transDate.isAfter(_endDate!); return passesStartDate && passesEndDate; }).toList(); _applySort(); }); }
-  void _clearFilter() { if (!mounted) return; setState(() { _startDate = null; _endDate = null; _filteredEntries = List.from(_allEntries); _applySort(); }); }
-  void _onSort(int columnIndex, bool ascending) { if (!mounted) return; setState(() { _sortColumnIndex = columnIndex; _sortAscending = ascending; _applySort(); }); }
+  List<PurchaseJournalEntry> _allEntries = [];
+  List<PurchaseJournalEntry> _filteredEntries = [];
+  bool _isLoading = true;
+  bool _isFetchingMore = false;
+  String? _error;
+  DateTime? _startDate;
+  DateTime? _endDate;
+  int _currentPage = 1;
+  final int _pageSize = 10;
+  bool _hasMoreData = true;
+  int _sortColumnIndex = 0;
+  bool _sortAscending = true;
+  @override
+  void initState() {
+    super.initState();
+    _fetchJournalEntries(isInitialLoad: true);
+  }
+
+  Future<void> _fetchJournalEntries({bool isInitialLoad = false}) async {
+    if (_isFetchingMore || (!isInitialLoad && !_hasMoreData)) return;
+    if (!mounted) return;
+    setState(() {
+      if (isInitialLoad) {
+        _isLoading = true;
+        _currentPage = 1;
+        _allEntries.clear();
+        _filteredEntries.clear();
+        _hasMoreData = true;
+      } else {
+        _isFetchingMore = true;
+      }
+      _error = null;
+    });
+    int pageToFetch = isInitialLoad ? 1 : _currentPage + 1;
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required.');
+      }
+      final url = Uri.parse(
+        '$baseUrl/api/API/getdataJPB?page=$pageToFetch&pageSize=$_pageSize',
+      );
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(Duration(seconds: 45));
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        final List<PurchaseJournalEntry> newEntries =
+            data
+                .map((jsonItem) => PurchaseJournalEntry.fromJson(jsonItem))
+                .toList();
+        if (newEntries.length < _pageSize) {
+          _hasMoreData = false;
+        }
+        _allEntries.addAll(newEntries);
+        _currentPage = pageToFetch;
+        _applyFilter();
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        throw Exception(
+          'Session expired or unauthorized (Code: ${response.statusCode}).',
+        );
+      } else {
+        throw Exception(
+          'Failed to load data. Status Code: ${response.statusCode}\nBody: ${response.body}',
+        );
+      }
+    } on TimeoutException catch (e) {
+      _error = e.message ?? "Request timed out.";
+    } on http.ClientException catch (e) {
+      _error = "Network error: ${e.message}.";
+    } catch (e) {
+      print("Error (Page $pageToFetch): $e");
+      _error = "An unexpected error occurred: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isFetchingMore = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _selectDate(BuildContext context, bool isStartDate) async {
+    final DateTime initial =
+        (isStartDate ? _startDate : _endDate) ?? DateTime.now();
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        if (isStartDate) {
+          _startDate = picked;
+        } else {
+          _endDate = DateTime(
+            picked.year,
+            picked.month,
+            picked.day,
+            23,
+            59,
+            59,
+            999,
+          );
+        }
+        _applyFilter();
+      });
+    }
+  }
+
+  void _applyFilter() {
+    if (!mounted) return;
+    setState(() {
+      _filteredEntries =
+          _allEntries.where((entry) {
+            bool passesStartDate =
+                _startDate == null || !entry.transDate.isBefore(_startDate!);
+            bool passesEndDate =
+                _endDate == null || !entry.transDate.isAfter(_endDate!);
+            return passesStartDate && passesEndDate;
+          }).toList();
+      _applySort();
+    });
+  }
+
+  void _clearFilter() {
+    if (!mounted) return;
+    setState(() {
+      _startDate = null;
+      _endDate = null;
+      _filteredEntries = List.from(_allEntries);
+      _applySort();
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    if (!mounted) return;
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applySort();
+    });
+  }
+
   // --- CORRECTED Sort Logic for PurchaseJournalEntry ---
   void _applySort() {
     _filteredEntries.sort((a, b) {
       int compareResult = 0;
       switch (_sortColumnIndex) {
-        case 0: compareResult = a.transDate.compareTo(b.transDate); break;
-        case 1: compareResult = a.transNo.compareTo(b.transNo); break;
-        case 2: compareResult = a.description.compareTo(b.description); break;
-      // --- Use Purchase fields: Value and ValueDisc ---
-        case 3: compareResult = a.Value.compareTo(b.Value); break;
-        case 4: compareResult = a.ValueDisc.compareTo(b.ValueDisc); break;
+        case 0:
+          compareResult = a.transDate.compareTo(b.transDate);
+          break;
+        case 1:
+          compareResult = a.transNo.compareTo(b.transNo);
+          break;
+        case 2:
+          compareResult = a.description.compareTo(b.description);
+          break;
+        // --- Use Purchase fields: Value and ValueDisc ---
+        case 3:
+          compareResult = a.Value.compareTo(b.Value);
+          break;
+        case 4:
+          compareResult = a.ValueDisc.compareTo(b.ValueDisc);
+          break;
       }
       return _sortAscending ? compareResult : -compareResult;
     });
   }
 
   @override
-  Widget build(BuildContext context) { return Scaffold( appBar: AppBar( title: Text('Purchasing Journal'), actions: [ IconButton( icon: Icon(Icons.refresh), tooltip: 'Refresh Data', onPressed: (_isLoading || _isFetchingMore) ? null : () => _fetchJournalEntries(isInitialLoad: true), ), ], ), body: _buildBody(),
-    // --- TODO: Create AddPurchaseJournalEntryPage ---
-    floatingActionButton: FloatingActionButton( onPressed: () {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('TODO: Create Add Purchase Page')));
-       Navigator.push( context, MaterialPageRoute(builder: (context) => AddPurchaseJournalEntryPage()), ).then((value) { if (value == true) { _fetchJournalEntries(isInitialLoad: true); } });
-       }, tooltip: 'Add New Purchase Entry', child: Icon(Icons.add), backgroundColor: Theme.of(context).primaryColor, ), ); }
-  Widget _buildBody() { if (_isLoading) { return Center(child: CircularProgressIndicator()); } if (_error != null && _allEntries.isEmpty) { return _buildErrorWidget(_error!); } return Column( children: [ _buildDateFilterRow(context), if (_error != null && _allEntries.isNotEmpty) Padding( padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0), child: Text("Error loading more: $_error", style: TextStyle(color: Colors.red)), ), Expanded( child: ListView( children: [ _buildDataTable(), _buildPaginationControls(), ], ), ), ], ); }
-  Widget _buildDateFilterRow(BuildContext context) { final DateFormat formatter = DateFormat('dd MMM yyyy'); final Color primaryColor = Theme.of(context).primaryColor; return Padding( padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0), child: Wrap( spacing: 8.0, runSpacing: 0.0, alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: [ TextButton.icon( style: TextButton.styleFrom(visualDensity: VisualDensity.compact), icon: Icon(Icons.calendar_today, size: 18, color: primaryColor), label: Text(_startDate == null ? 'From Date' : formatter.format(_startDate!), style: TextStyle(color: primaryColor)), onPressed: () => _selectDate(context, true), ), TextButton.icon( style: TextButton.styleFrom(visualDensity: VisualDensity.compact), icon: Icon(Icons.calendar_today, size: 18, color: primaryColor), label: Text(_endDate == null ? 'To Date' : formatter.format(_endDate!), style: TextStyle(color: primaryColor)), onPressed: () => _selectDate(context, false), ), if (_startDate != null || _endDate != null) Padding( padding: const EdgeInsets.only(left: 4.0), child: ActionChip( avatar: Icon(Icons.clear, size: 16, color: Colors.black54), label: Text('Clear Filter', style: TextStyle(fontSize: 12, color: Colors.black87)), onPressed: _clearFilter, backgroundColor: Colors.grey[200], visualDensity: VisualDensity.compact, padding: EdgeInsets.symmetric(horizontal: 4.0), ), ), ], ), ); }
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Purchasing Journal'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            tooltip: 'Refresh Data',
+            onPressed:
+                (_isLoading || _isFetchingMore)
+                    ? null
+                    : () => _fetchJournalEntries(isInitialLoad: true),
+          ),
+        ],
+      ),
+      body: _buildBody(),
+      // --- TODO: Create AddPurchaseJournalEntryPage ---
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('TODO: Create Add Purchase Page')),
+          );
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AddPurchaseJournalEntryPage(),
+            ),
+          ).then((value) {
+            if (value == true) {
+              _fetchJournalEntries(isInitialLoad: true);
+            }
+          });
+        },
+        tooltip: 'Add New Purchase Entry',
+        child: Icon(Icons.add),
+        backgroundColor: Theme.of(context).primaryColor,
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator());
+    }
+    if (_error != null && _allEntries.isEmpty) {
+      return _buildErrorWidget(_error!);
+    }
+    return Column(
+      children: [
+        _buildDateFilterRow(context),
+        if (_error != null && _allEntries.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              vertical: 8.0,
+              horizontal: 16.0,
+            ),
+            child: Text(
+              "Error loading more: $_error",
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        Expanded(
+          child: ListView(
+            children: [_buildDataTable(), _buildPaginationControls()],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateFilterRow(BuildContext context) {
+    final DateFormat formatter = DateFormat('dd MMM yyyy');
+    final Color primaryColor = Theme.of(context).primaryColor;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      child: Wrap(
+        spacing: 8.0,
+        runSpacing: 0.0,
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          TextButton.icon(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            icon: Icon(Icons.calendar_today, size: 18, color: primaryColor),
+            label: Text(
+              _startDate == null ? 'From Date' : formatter.format(_startDate!),
+              style: TextStyle(color: primaryColor),
+            ),
+            onPressed: () => _selectDate(context, true),
+          ),
+          TextButton.icon(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            icon: Icon(Icons.calendar_today, size: 18, color: primaryColor),
+            label: Text(
+              _endDate == null ? 'To Date' : formatter.format(_endDate!),
+              style: TextStyle(color: primaryColor),
+            ),
+            onPressed: () => _selectDate(context, false),
+          ),
+          if (_startDate != null || _endDate != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 4.0),
+              child: ActionChip(
+                avatar: Icon(Icons.clear, size: 16, color: Colors.black54),
+                label: Text(
+                  'Clear Filter',
+                  style: TextStyle(fontSize: 12, color: Colors.black87),
+                ),
+                onPressed: _clearFilter,
+                backgroundColor: Colors.grey[200],
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.symmetric(horizontal: 4.0),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   // --- CORRECTED DataTable for PurchaseJournalEntry ---
   Widget _buildDataTable() {
     if (_filteredEntries.isEmpty && !_isLoading) {
-      return Center(child: Padding( padding: const EdgeInsets.all(40.0), child: Text( 'No entries found${(_startDate !=null || _endDate !=null) ? ' for the selected date range': ''}.', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey[600]), ), ) );
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40.0),
+          child: Text(
+            'No entries found${(_startDate != null || _endDate != null) ? ' for the selected date range' : ''}.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+          ),
+        ),
+      );
     }
     // --- Adjust Column Headers ---
     final List<DataColumn> columns = [
-      DataColumn(label: Text('Date'), tooltip: 'Transaction Date', onSort: _onSort),
-      DataColumn(label: Text('Trans No'), tooltip: 'Transaction Number', onSort: _onSort),
-      DataColumn(label: Text('Description'), tooltip: 'Transaction Description', onSort: _onSort),
-      DataColumn(label: Text('Value'), tooltip: 'Value Amount', numeric: true, onSort: _onSort), // Header uses 'Value'
-      DataColumn(label: Text('Discount'), tooltip: 'Discount Amount', numeric: true, onSort: _onSort), // Header uses 'Discount'
+      DataColumn(
+        label: Text('Date'),
+        tooltip: 'Transaction Date',
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Trans No'),
+        tooltip: 'Transaction Number',
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Description'),
+        tooltip: 'Transaction Description',
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Value'),
+        tooltip: 'Value Amount',
+        numeric: true,
+        onSort: _onSort,
+      ), // Header uses 'Value'
+      DataColumn(
+        label: Text('Discount'),
+        tooltip: 'Discount Amount',
+        numeric: true,
+        onSort: _onSort,
+      ), // Header uses 'Discount'
     ];
     // --- Map to correct fields for display ---
-    final List<DataRow> rows = _filteredEntries.map((entry) {
-      return DataRow( cells: [
-        DataCell(Text(entry.formattedDate)),
-        DataCell(Text(entry.transNo)),
-        DataCell(Text(entry.description)),
-        DataCell(Text(entry.formattedValue)), // Use formattedValue
-        DataCell(Text(entry.formattedValueDisc)), // Use formattedValueDisc
-      ],);
-    }).toList();
-    return SingleChildScrollView( scrollDirection: Axis.horizontal, child: DataTable( columns: columns, rows: rows, sortColumnIndex: _sortColumnIndex, sortAscending: _sortAscending, showCheckboxColumn: false, columnSpacing: 20, headingRowHeight: 40, dataRowMinHeight: 48, dataRowMaxHeight: 56, headingTextStyle: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey[800]), headingRowColor: MaterialStateProperty.resolveWith<Color?>((_) => Colors.blueGrey[50]), ), );
-  }
-
-  Widget _buildPaginationControls() { if (_hasMoreData) { return Padding( padding: const EdgeInsets.symmetric(vertical: 16.0), child: Center( child: _isFetchingMore ? CircularProgressIndicator() : ElevatedButton( onPressed: () => _fetchJournalEntries(), child: Text('Load More'), ), ), ); } else if (_allEntries.isNotEmpty) { return Padding( padding: const EdgeInsets.symmetric(vertical: 24.0), child: Center(child: Text("End of list", style: TextStyle(color: Colors.grey))), ); } else { return SizedBox.shrink(); } }
-  Widget _buildErrorWidget(String errorMessage) { return Center( child: Padding( padding: const EdgeInsets.all(20.0), child: Column( mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center, children: [ Icon(Icons.error_outline, color: Colors.red.shade700, size: 60), SizedBox(height: 15), Text('Failed to Load Data', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red.shade900), textAlign: TextAlign.center, ), SizedBox(height: 10), Text(errorMessage, textAlign: TextAlign.center, style: TextStyle(color: Colors.black87),), SizedBox(height: 25), ElevatedButton.icon( icon: Icon(Icons.refresh), label: Text('Retry'), onPressed: () => _fetchJournalEntries(isInitialLoad: true), style: ElevatedButton.styleFrom(foregroundColor: Colors.white, backgroundColor: Theme.of(context).primaryColor), ) ], ), )); }
-}
-class DownloadReportPage extends StatelessWidget {
-
-  // Placeholder function to simulate download initiation
-  void _initiateDownload(BuildContext context, String reportName) {
-    // Show feedback to the user
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Preparing $reportName report download...'),
-        duration: Duration(seconds: 2),
+    final List<DataRow> rows =
+        _filteredEntries.map((entry) {
+          return DataRow(
+            cells: [
+              DataCell(Text(entry.formattedDate)),
+              DataCell(Text(entry.transNo)),
+              DataCell(Text(entry.description)),
+              DataCell(Text(entry.formattedValue)), // Use formattedValue
+              DataCell(
+                Text(entry.formattedValueDisc),
+              ), // Use formattedValueDisc
+            ],
+          );
+        }).toList();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columns: columns,
+        rows: rows,
+        sortColumnIndex: _sortColumnIndex,
+        sortAscending: _sortAscending,
+        showCheckboxColumn: false,
+        columnSpacing: 20,
+        headingRowHeight: 40,
+        dataRowMinHeight: 48,
+        dataRowMaxHeight: 56,
+        headingTextStyle: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: Colors.blueGrey[800],
+        ),
+        headingRowColor: MaterialStateProperty.resolveWith<Color?>(
+          (_) => Colors.blueGrey[50],
+        ),
       ),
     );
+  }
 
-    // TODO: Implement actual download logic here:
-    // 1. Get necessary parameters (e.g., date range, company ID). You might need input fields on this page or pass them from elsewhere.
-    // 2. Get auth token from SharedPreferences.
-    // 3. Construct the correct API endpoint URL (e.g., /api/Reports/TrialBalance, /api/Reports/ProfitLoss).
-    // 4. Make the API call (likely a GET request) using the http package, including headers.
-    // 5. Handle the response:
-    //    - Check status code (200 OK).
-    //    - If successful, get the file data (e.g., response.bodyBytes).
-    //    - Determine the file type from response headers (e.g., 'Content-Type': 'application/pdf').
-    //    - Use packages like 'path_provider' to get a temporary directory.
-    //    - Write the bytes to a file.
-    //    - Use a package like 'open_file' or 'share_plus' to open or share the downloaded file.
-    // 6. Handle errors (network, API errors, file writing errors) and show appropriate messages.
+  Widget _buildPaginationControls() {
+    if (_hasMoreData) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16.0),
+        child: Center(
+          child:
+              _isFetchingMore
+                  ? CircularProgressIndicator()
+                  : ElevatedButton(
+                    onPressed: () => _fetchJournalEntries(),
+                    child: Text('Load More'),
+                  ),
+        ),
+      );
+    } else if (_allEntries.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24.0),
+        child: Center(
+          child: Text("End of list", style: TextStyle(color: Colors.grey)),
+        ),
+      );
+    } else {
+      return SizedBox.shrink();
+    }
+  }
 
-    print("Download requested for: $reportName");
+  Widget _buildErrorWidget(String errorMessage) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: Colors.red.shade700, size: 60),
+            SizedBox(height: 15),
+            Text(
+              'Failed to Load Data',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.red.shade900,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 10),
+            Text(
+              errorMessage,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.black87),
+            ),
+            SizedBox(height: 25),
+            ElevatedButton.icon(
+              icon: Icon(Icons.refresh),
+              label: Text('Retry'),
+              onPressed: () => _fetchJournalEntries(isInitialLoad: true),
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).primaryColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ================================================================
+// START OF DOWNLOAD REPORT PAGE & FILTER PAGES
+// ================================================================
+class DownloadReportPage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Download Report')),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 16.0),
+        children: <Widget>[
+          ListTile(
+            leading: Icon(
+              Icons.account_balance_wallet_outlined,
+              color: Theme.of(context).primaryColor,
+            ),
+            title: Text('Trial Balance', style: TextStyle(fontSize: 18)),
+            trailing: Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => TrialBalanceFilterPage(),
+                ),
+              );
+            },
+          ),
+          Divider(),
+          ListTile(
+            leading: Icon(Icons.assessment_outlined, color: Colors.green),
+            title: Text('Profit and Loss', style: TextStyle(fontSize: 18)),
+            trailing: Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => ProfitLossFilterPage()),
+              );
+            },
+          ),
+          Divider(),
+        ],
+      ),
+    );
+  }
+}
+
+class TrialBalanceFilterPage extends StatefulWidget {
+  @override
+  _TrialBalanceFilterPageState createState() => _TrialBalanceFilterPageState();
+}
+
+class _TrialBalanceFilterPageState extends State<TrialBalanceFilterPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _yearController = TextEditingController(
+    text: DateTime.now().year.toString(),
+  );
+  bool _isPreview = true;
+  bool _isLoading = false;
+  String? _downloadError;
+
+  @override
+  void dispose() {
+    _yearController.dispose();
+    super.dispose();
+  }
+
+  // --- Download Function (Navigate to In-App Viewer) ---
+  Future<void> _downloadReport(BuildContext context) async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _isLoading = true;
+      _downloadError = null;
+    });
+
+    String filePath = ''; // Store file path for navigation
+
+    try {
+      // --- Permission Check Removed ---
+
+      // 2. Get Token
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Authentication required.');
+
+      // 3. Prepare Request
+      final int? year = int.tryParse(_yearController.text);
+      if (year == null) throw Exception('Invalid Year entered.');
+      final String reportType = 'Trial Balance'; // Identify report type
+      final String previewStatus = _isPreview ? 'Preview' : 'Closed';
+      final String endpointPath =
+          _isPreview ? '/api/API/GeneratePreviewTB' : '/api/API/GeneratePdfTB';
+      final url = Uri.parse('$baseUrl$endpointPath');
+      final Map<String, dynamic> bodyMap = {"year": year};
+      final String requestBody = json.encode(bodyMap);
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Accept': 'application/pdf',
+        'Authorization': 'Bearer $token',
+      };
+      print("Requesting $reportType: $url with JSON body: $requestBody");
+
+      // 4. Make API Call
+      final response = await http
+          .post(url, headers: headers, body: requestBody)
+          .timeout(Duration(seconds: 90));
+
+      if (!mounted) return;
+
+      // 5. Handle Response
+      if (response.statusCode == 200) {
+        final Uint8List bytes = response.bodyBytes;
+        if (bytes.isEmpty) throw Exception('Received empty file from server.');
+
+        // 6. Save File (Use temporary directory is fine for viewing)
+        final dir = await getTemporaryDirectory();
+        final String filename =
+            '${reportType.replaceAll(' ', '_')}_${year}_$previewStatus.pdf';
+        final File file = File('${dir.path}/$filename');
+        await file.writeAsBytes(bytes);
+        filePath = file.path; // Store the path
+        print('PDF saved to ${filePath}');
+
+        // 7. Navigate to PDF Viewer Page
+        if (!mounted) return; // Check again before navigation
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder:
+                (context) => PdfViewerPage(
+                  filePath: filePath,
+                  reportName:
+                      '$reportType ($previewStatus $year)', // Pass info for title
+                ),
+          ),
+        );
+      } else {
+        String serverMessage = response.reasonPhrase ?? 'Download Failed';
+        try {
+          var errorData = json.decode(response.body);
+          serverMessage =
+              errorData['message'] ??
+              errorData['title'] ??
+              errorData['error'] ??
+              serverMessage;
+        } catch (_) {
+          /* Ignore */
+        }
+        print("Download Failed Body: ${response.body}");
+        throw Exception(
+          'Failed to download report. Server Response: ${response.statusCode} - $serverMessage',
+        );
+      }
+    } on TimeoutException {
+      _downloadError = "Request timed out while generating report.";
+    } on FileSystemException catch (e) {
+      _downloadError = "Could not save file: ${e.message}";
+      print("FileSystemException saving report: $e");
+    } catch (e) {
+      print("Error downloading report: $e");
+      _downloadError = "An error occurred: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } // Reset loading indicator even on error
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Trial Balance Report')),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Configure Report:',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              SizedBox(height: 20),
+              TextFormField(
+                controller: _yearController,
+                decoration: InputDecoration(
+                  labelText: 'Year',
+                  border: OutlineInputBorder(),
+                  counterText: '',
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                maxLength: 4,
+                validator: (value) {
+                  if (value == null || value.isEmpty)
+                    return 'Please enter a year.';
+                  if (value.length != 4) return 'Please enter a 4-digit year.';
+                  if (int.tryParse(value) == null) return 'Invalid year.';
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+              SwitchListTile(
+                title: Text('Preview Version'),
+                subtitle: Text(
+                  _isPreview
+                      ? 'Get the latest preview data'
+                      : 'Get the final closed data',
+                ),
+                value: _isPreview,
+                onChanged: (bool value) {
+                  setState(() {
+                    _isPreview = value;
+                  });
+                },
+                secondary: Icon(
+                  _isPreview ? Icons.visibility : Icons.lock_clock,
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
+              SizedBox(height: 30),
+              if (_downloadError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Text(
+                    _downloadError!,
+                    style: TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              _isLoading
+                  ? Center(child: CircularProgressIndicator())
+                  : ElevatedButton.icon(
+                    icon: Icon(Icons.download),
+                    label: Text('Generate & Download PDF'),
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 15),
+                      textStyle: TextStyle(fontSize: 16),
+                    ),
+                    onPressed: () => _downloadReport(context),
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ProfitLossFilterPage extends StatefulWidget {
+  @override
+  _ProfitLossFilterPageState createState() => _ProfitLossFilterPageState();
+}
+
+class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _yearController = TextEditingController(
+    text: DateTime.now().year.toString(),
+  );
+  bool _isYearly = true;
+  bool _isPreview = true;
+  bool _isLoading = false;
+  String? _downloadError;
+
+  @override
+  void dispose() {
+    _yearController.dispose();
+    super.dispose();
+  }
+
+  // --- Download Function (Navigate to In-App Viewer) ---
+  Future<void> _downloadReport(BuildContext context) async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _isLoading = true;
+      _downloadError = null;
+    });
+
+    String filePath = ''; // Store file path for navigation
+
+    try {
+      // --- Permission Check Removed ---
+
+      // 2. Get Token
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Authentication required.');
+
+      // 3. Prepare Request
+      final int? year = int.tryParse(_yearController.text);
+      if (year == null) throw Exception('Invalid Year entered.');
+      final String reportType = 'Trial Balance'; // Identify report type
+      final String previewStatus = _isPreview ? 'Preview' : 'Closed';
+      final String endpointPath =
+          _isPreview ? '/api/API/GeneratePreviewLR' : '/api/API/GeneratePdfLR';
+      final url = Uri.parse('$baseUrl$endpointPath');
+      final Map<String, dynamic> bodyMap = {"year": year};
+      final String requestBody = json.encode(bodyMap);
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Accept': 'application/pdf',
+        'Authorization': 'Bearer $token',
+      };
+      print("Requesting $reportType: $url with JSON body: $requestBody");
+
+      // 4. Make API Call
+      final response = await http
+          .post(url, headers: headers, body: requestBody)
+          .timeout(Duration(seconds: 90));
+
+      if (!mounted) return;
+
+      // 5. Handle Response
+      if (response.statusCode == 200) {
+        final Uint8List bytes = response.bodyBytes;
+        if (bytes.isEmpty) throw Exception('Received empty file from server.');
+
+        // 6. Save File (Use temporary directory is fine for viewing)
+        final dir = await getTemporaryDirectory();
+        final String filename =
+            '${reportType.replaceAll(' ', '_')}_${year}_$previewStatus.pdf';
+        final File file = File('${dir.path}/$filename');
+        await file.writeAsBytes(bytes);
+        filePath = file.path; // Store the path
+        print('PDF saved to ${filePath}');
+
+        // 7. Navigate to PDF Viewer Page
+        if (!mounted) return; // Check again before navigation
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder:
+                (context) => PdfViewerPage(
+                  filePath: filePath,
+                  reportName:
+                      '$reportType ($previewStatus $year)', // Pass info for title
+                ),
+          ),
+        );
+      } else {
+        String serverMessage = response.reasonPhrase ?? 'Download Failed';
+        try {
+          var errorData = json.decode(response.body);
+          serverMessage =
+              errorData['message'] ??
+              errorData['title'] ??
+              errorData['error'] ??
+              serverMessage;
+        } catch (_) {
+          /* Ignore */
+        }
+        print("Download Failed Body: ${response.body}");
+        throw Exception(
+          'Failed to download report. Server Response: ${response.statusCode} - $serverMessage',
+        );
+      }
+    } on TimeoutException {
+      _downloadError = "Request timed out while generating report.";
+    } on FileSystemException catch (e) {
+      _downloadError = "Could not save file: ${e.message}";
+      print("FileSystemException saving report: $e");
+    } catch (e) {
+      print("Error downloading report: $e");
+      _downloadError = "An error occurred: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } // Reset loading indicator even on error
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Profit and Loss Report')),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Configure Report:',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              SizedBox(height: 20),
+              TextFormField(
+                controller: _yearController,
+                decoration: InputDecoration(
+                  labelText: 'Year',
+                  border: OutlineInputBorder(),
+                  counterText: '',
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                maxLength: 4,
+                validator: (value) {
+                  if (value == null || value.isEmpty)
+                    return 'Please enter a year.';
+                  if (value.length != 4) return 'Please enter a 4-digit year.';
+                  if (int.tryParse(value) == null) return 'Invalid year.';
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+              SwitchListTile(
+                title: Text('Yearly Report'),
+                subtitle: Text(
+                  _isYearly
+                      ? 'Covers the entire selected year'
+                      : 'Covers only the last month of the year',
+                ),
+                value: _isYearly,
+                onChanged: (bool value) {
+                  setState(() {
+                    _isYearly = value;
+                  });
+                },
+                secondary: Icon(
+                  _isYearly ? Icons.calendar_month : Icons.calendar_view_day,
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
+              SizedBox(height: 8),
+              SwitchListTile(
+                title: Text('Preview Version'),
+                subtitle: Text(
+                  _isPreview
+                      ? 'Get the latest preview data'
+                      : 'Get the final closed data',
+                ),
+                value: _isPreview,
+                onChanged: (bool value) {
+                  setState(() {
+                    _isPreview = value;
+                  });
+                },
+                secondary: Icon(
+                  _isPreview ? Icons.visibility : Icons.lock_clock,
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
+              SizedBox(height: 30),
+              if (_downloadError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Text(
+                    _downloadError!,
+                    style: TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              _isLoading
+                  ? Center(child: CircularProgressIndicator())
+                  : ElevatedButton.icon(
+                    icon: Icon(Icons.download),
+                    label: Text('Generate & Download PDF'),
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 15),
+                      textStyle: TextStyle(fontSize: 16),
+                    ),
+                    onPressed: () => _downloadReport(context),
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ================================================================
+// END OF DOWNLOAD REPORT PAGE & FILTER PAGES
+// ================================================================
+
+class AdminMenuPage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Admin Menu')),
+      body: Center(child: Text('Admin Menu Page - Implement Here')),
+    );
+  }
+}
+
+// ================================================================
+// PDF VIEWER PAGE (with Save Button)
+// ================================================================
+class PdfViewerPage extends StatefulWidget {
+  final String filePath;
+  final String reportName;
+
+  const PdfViewerPage({
+    Key? key,
+    required this.filePath,
+    required this.reportName,
+  }) : super(key: key);
+
+  @override
+  _PdfViewerPageState createState() => _PdfViewerPageState();
+}
+
+class _PdfViewerPageState extends State<PdfViewerPage> {
+  int _totalPages = 0;
+  int _currentPage = 0;
+  bool _isReady = false;
+  String _errorMessage = '';
+  PDFViewController? _pdfViewController;
+  bool _isSaving = false; // State for save button loading indicator
+
+  // --- Function to Save/Copy the PDF to Downloads ---
+  // --- Function to Save/Copy the PDF to App-Specific External Dir ---
+  // --- Function to Save/Copy the PDF to App Documents Directory ---
+  Future<void> _savePdfToAppDocuments() async {
+    // Renamed for clarity
+    if (_isSaving) return;
+    setState(() {
+      _isSaving = true;
+    });
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    Directory? targetDir; // To store the target directory path
+    String filename = '';
+
+    try {
+      // --- NO PERMISSION REQUEST NEEDED for App Documents ---
+
+      // 2. Get App Documents Directory (Works cross-platform)
+      targetDir = await getApplicationDocumentsDirectory();
+
+      // 3. Copy the File
+      final File originalFile = File(
+        widget.filePath,
+      ); // filePath is from getTemporaryDirectory()
+      if (!await originalFile.exists()) {
+        throw Exception(
+          "Original temporary file not found at ${widget.filePath}.",
+        );
+      }
+
+      filename = widget.filePath.split('/').last; // Get filename from temp path
+      final File newFile = File('${targetDir.path}/$filename');
+
+      // Perform the copy from temp to documents
+      await originalFile.copy(newFile.path);
+      print('PDF Copied from temp to App Documents: ${newFile.path}');
+
+      // --- Delete the temporary file (optional, good practice) ---
+      try {
+        await originalFile.delete();
+        print('Temporary file deleted: ${originalFile.path}');
+      } catch (e) {
+        print(
+          "Could not delete temporary file: $e",
+        ); // Log error, but don't stop execution
+      }
+      // ----------------------------------------------------------
+
+      // 4. Show Success Message with Clearer Location Info
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Report saved: $filename'), // Simpler message
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'FIND FILE', // More direct action label
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder:
+                    (_) => AlertDialog(
+                      title: Text('File Saved Location'),
+                      // Detailed explanation
+                      content: SelectableText(
+                        // Make path selectable
+                        'The report "$filename" was saved internally within the app\'s data.\n\n'
+                        'On Android, you might find it using a file manager app capable of showing app data at:\n'
+                        '${targetDir?.path}\n\n'
+                        '(Typically under Android/data/${'com.example.easytax'}/files)\n\n' // **<-- REPLACE with your app ID**
+                        'On iOS, use the Files app and look under "On My iPhone/iPad" > "${'Your App Name'}".', // **<-- REPLACE with your app name**
+                        textAlign: TextAlign.left,
+                      ),
+                      actions: [
+                        TextButton(
+                          child: Text('OK'),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+              );
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      print("Error saving PDF: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving file: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Download Report'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 30.0), // Add padding
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.start, // Align content to the top
-          crossAxisAlignment: CrossAxisAlignment.stretch, // Make buttons fill width
-          children: <Widget>[
-            Text(
-              'Select a report type:',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 40), // Add space
-
-            // --- Trial Balance Button ---
-            ElevatedButton.icon(
-              icon: Icon(Icons.account_balance_wallet_outlined),
-              label: Text('Trial Balance'),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 18), // Make button taller
-                textStyle: TextStyle(fontSize: 18), // Increase font size
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), // Rounded corners
+        title: Text(widget.reportName),
+        actions: <Widget>[
+          // --- Add Save Button ---
+          _isSaving
+              ? Padding(
+                padding: const EdgeInsets.only(right: 16.0),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2.0,
+                    ),
+                  ),
+                ),
+              )
+              : IconButton(
+                icon: Icon(Icons.save_alt),
+                tooltip: 'Save to Downloads',
+                onPressed: _savePdfToAppDocuments,
               ),
-              onPressed: () {
-                _initiateDownload(context, 'Trial Balance');
-              },
+          // --------------------
+          if (_totalPages > 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Center(child: Text('${_currentPage + 1}/$_totalPages')),
             ),
-            SizedBox(height: 25), // Add space between buttons
-
-            // --- Profit and Loss Button ---
-            ElevatedButton.icon(
-              icon: Icon(Icons.assessment_outlined), // Chart/Assessment icon
-              label: Text('Profit and Loss'),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 18),
-                textStyle: TextStyle(fontSize: 18),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                backgroundColor: Colors.green, // Example: Different color
-                foregroundColor: Colors.white, // Text color for colored button
-              ),
-              onPressed: () {
-                _initiateDownload(context, 'Profit and Loss');
-              },
-            ),
-
-            // --- Add more report buttons here if needed ---
-            // SizedBox(height: 25),
-            // ElevatedButton.icon(
-            //   icon: Icon(Icons.receipt_long),
-            //   label: Text('Another Report'),
-            //   onPressed: () {
-            //     _initiateDownload(context, 'Another Report');
-            //   },
-            //   // ... style ...
-            // ),
-          ],
-        ),
+        ],
       ),
+      body: Stack(
+        children: <Widget>[
+          PDFView(
+            filePath: widget.filePath,
+            enableSwipe: true,
+            swipeHorizontal: false,
+            autoSpacing: false,
+            pageFling: true,
+            pageSnap: true,
+            defaultPage: _currentPage,
+            fitPolicy: FitPolicy.BOTH,
+            preventLinkNavigation: false,
+            onRender: (pages) {
+              if (mounted) {
+                setState(() {
+                  _totalPages = pages ?? 0;
+                  _isReady = true;
+                });
+              }
+              print("PDF Rendered: $pages pages");
+            },
+            onError: (error) {
+              print("PDF Error: $error");
+              if (mounted) {
+                setState(() {
+                  _errorMessage = error.toString();
+                });
+              }
+            },
+            onPageError: (page, error) {
+              print('PDF Page Error: page $page, error: $error');
+              if (mounted) {
+                setState(() {
+                  _errorMessage = 'Error loading page $page: $error';
+                });
+              }
+            },
+            onViewCreated: (PDFViewController pdfViewController) {
+              _pdfViewController = pdfViewController;
+            },
+            onPageChanged: (int? page, int? total) {
+              print('page change: $page/$total');
+              if (mounted && page != null) {
+                setState(() {
+                  _currentPage = page;
+                });
+              }
+            },
+          ),
+          if (!_isReady && _errorMessage.isEmpty)
+            Center(child: CircularProgressIndicator())
+          else if (_errorMessage.isNotEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Error loading PDF: $_errorMessage',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+            ),
+        ],
+      ),
+      floatingActionButton:
+          _totalPages > 1
+              ? FloatingActionButton.extended(
+                label: Text("${_currentPage + 1}/$_totalPages"),
+                icon: Icon(Icons.pages),
+                onPressed: () async {
+                  if (_pdfViewController != null) {
+                    int nextPage = (_currentPage + 1) % _totalPages;
+                    await _pdfViewController!.setPage(nextPage);
+                  }
+                },
+              )
+              : null,
     );
   }
-}class AdminMenuPage extends StatelessWidget { @override Widget build(BuildContext context) { return Scaffold( appBar: AppBar(title: Text('Admin Menu')), body: Center(child: Text('Admin Menu Page - Implement Here')), ); } }
+}
+// ================================================================
+// END OF PDF VIEWER PAGE
+// ================================================================
