@@ -12,9 +12,10 @@ import 'package:path_provider/path_provider.dart'; // Keep for getApplicationDoc
 import 'package:permission_handler/permission_handler.dart'; // Keep for Permission
 import 'package:dropdown_search/dropdown_search.dart'; // Keep if used for Add page
 import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:share_plus/share_plus.dart';
 
 // --- Define your Base URL ---
-const String baseUrl = 'http://192.168.100.176:13080/'; // ADJUST AS NEEDED
+const String baseUrl = 'http://192.168.100.176:13080'; // ADJUST AS NEEDED
 
 // --- Data Model Class for Memorial Journal Entry ---
 class MemorialJournalEntry {
@@ -3904,9 +3905,26 @@ class _TrialBalanceFilterPageState extends State<TrialBalanceFilterPage> {
   final _yearController = TextEditingController(
     text: DateTime.now().year.toString(),
   );
+  int _selectedMonth = DateTime.now().month;
+  bool _isYearly = true;
   bool _isPreview = true;
   bool _isLoading = false;
   String? _downloadError;
+
+  final List<Map<String, dynamic>> _months = [
+    {'value': 1, 'name': 'January'},
+    {'value': 2, 'name': 'February'},
+    {'value': 3, 'name': 'March'},
+    {'value': 4, 'name': 'April'},
+    {'value': 5, 'name': 'May'},
+    {'value': 6, 'name': 'June'},
+    {'value': 7, 'name': 'July'},
+    {'value': 8, 'name': 'August'},
+    {'value': 9, 'name': 'September'},
+    {'value': 10, 'name': 'October'},
+    {'value': 11, 'name': 'November'},
+    {'value': 12, 'name': 'December'},
+  ];
 
   @override
   void dispose() {
@@ -3914,65 +3932,65 @@ class _TrialBalanceFilterPageState extends State<TrialBalanceFilterPage> {
     super.dispose();
   }
 
-  // --- Download Function (Navigate to In-App Viewer) ---
   Future<void> _downloadReport(BuildContext context) async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _isLoading = true;
       _downloadError = null;
     });
-
-    String filePath = ''; // Store file path for navigation
+    String filePath = '';
 
     try {
-      // --- Permission Check Removed ---
-
-      // 2. Get Token
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('auth_token');
       if (token == null || token.isEmpty)
         throw Exception('Authentication required.');
-
-      // 3. Prepare Request
       final int? year = int.tryParse(_yearController.text);
       if (year == null) throw Exception('Invalid Year entered.');
-      final String reportType = 'Trial Balance'; // Identify report type
+
+      final String reportNameForTitle = 'Trial Balance';
       final String previewStatus = _isPreview ? 'Preview' : 'Closed';
       final String endpointPath =
           _isPreview ? '/api/API/GeneratePreviewTB' : '/api/API/GeneratePdfTB';
       final url = Uri.parse('$baseUrl$endpointPath');
-      final Map<String, dynamic> bodyMap = {"year": year};
+      final Map<String, dynamic> bodyMap = {
+        "year": year,
+        "month": _isYearly ? 0 : _selectedMonth,
+        "isYearly": _isYearly,
+      };
       final String requestBody = json.encode(bodyMap);
       final headers = {
         'Content-Type': 'application/json; charset=UTF-8',
         'Accept': 'application/pdf',
         'Authorization': 'Bearer $token',
       };
-      print("Requesting $reportType: $url with JSON body: $requestBody");
-
-      // 4. Make API Call
+      print("--- FLUTTER REQUEST (Trial Balance - View) ---");
+      print("URL: $url");
+      print("Headers: $headers");
+      print("Body: $requestBody");
+      print("--- END FLUTTER REQUEST ---");
       final response = await http
           .post(url, headers: headers, body: requestBody)
           .timeout(Duration(seconds: 90));
 
       if (!mounted) return;
 
-      // 5. Handle Response
       if (response.statusCode == 200) {
         final Uint8List bytes = response.bodyBytes;
         if (bytes.isEmpty) throw Exception('Received empty file from server.');
-
-        // 6. Save File (Use temporary directory is fine for viewing)
-        final dir = await getTemporaryDirectory();
+        final tempDir = await getTemporaryDirectory();
+        final String monthString =
+            _isYearly
+                ? "Yearly"
+                : DateFormat('MMM').format(DateTime(0, _selectedMonth));
         final String filename =
-            '${reportType.replaceAll(' ', '_')}_${year}_$previewStatus.pdf';
-        final File file = File('${dir.path}/$filename');
+            '${reportNameForTitle.replaceAll(' ', '_')}_${year}_${monthString}_$previewStatus.pdf';
+        final File file = File('${tempDir.path}/$filename');
         await file.writeAsBytes(bytes);
-        filePath = file.path; // Store the path
-        print('PDF saved to ${filePath}');
+        filePath = file.path;
+        print('PDF saved temporarily to ${filePath}');
 
-        // 7. Navigate to PDF Viewer Page
-        if (!mounted) return; // Check again before navigation
+        if (!mounted) return;
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -3980,7 +3998,7 @@ class _TrialBalanceFilterPageState extends State<TrialBalanceFilterPage> {
                 (context) => PdfViewerPage(
                   filePath: filePath,
                   reportName:
-                      '$reportType ($previewStatus $year)', // Pass info for title
+                      '$reportNameForTitle ($previewStatus $year - $monthString)',
                 ),
           ),
         );
@@ -3996,7 +4014,7 @@ class _TrialBalanceFilterPageState extends State<TrialBalanceFilterPage> {
         } catch (_) {
           /* Ignore */
         }
-        print("Download Failed Body: ${response.body}");
+        print("Download Failed Body for Trial Balance: ${response.body}");
         throw Exception(
           'Failed to download report. Server Response: ${response.statusCode} - $serverMessage',
         );
@@ -4004,10 +4022,10 @@ class _TrialBalanceFilterPageState extends State<TrialBalanceFilterPage> {
     } on TimeoutException {
       _downloadError = "Request timed out while generating report.";
     } on FileSystemException catch (e) {
-      _downloadError = "Could not save file: ${e.message}";
+      _downloadError = "Could not save temporary file: ${e.message}";
       print("FileSystemException saving report: $e");
     } catch (e) {
-      print("Error downloading report: $e");
+      print("Error downloading Trial Balance report: $e");
       _downloadError = "An error occurred: ${e.toString()}";
     } finally {
       if (mounted) {
@@ -4015,7 +4033,7 @@ class _TrialBalanceFilterPageState extends State<TrialBalanceFilterPage> {
           _isLoading = false;
         });
       }
-    } // Reset loading indicator even on error
+    }
   }
 
   @override
@@ -4054,11 +4072,54 @@ class _TrialBalanceFilterPageState extends State<TrialBalanceFilterPage> {
               ),
               SizedBox(height: 16),
               SwitchListTile(
+                title: Text('Yearly Report'),
+                value: _isYearly,
+                onChanged: (bool value) {
+                  setState(() {
+                    _isYearly = value;
+                  });
+                },
+                secondary: Icon(
+                  _isYearly ? Icons.calendar_month : Icons.date_range,
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
+              SizedBox(height: 8),
+              if (!_isYearly) ...[
+                DropdownButtonFormField<int>(
+                  decoration: InputDecoration(
+                    labelText: 'Month',
+                    border: OutlineInputBorder(),
+                  ),
+                  value: _selectedMonth,
+                  items:
+                      _months.map((Map<String, dynamic> month) {
+                        return DropdownMenuItem<int>(
+                          value: month['value'],
+                          child: Text(month['name']),
+                        );
+                      }).toList(),
+                  onChanged: (int? newValue) {
+                    if (newValue != null) {
+                      setState(() {
+                        _selectedMonth = newValue;
+                      });
+                    }
+                  },
+                  validator: (value) {
+                    if (!_isYearly && value == null)
+                      return 'Please select a month.';
+                    return null;
+                  },
+                ),
+                SizedBox(height: 16),
+              ],
+              SwitchListTile(
                 title: Text('Preview Version'),
                 subtitle: Text(
                   _isPreview
-                      ? 'Get the latest preview data'
-                      : 'Get the final closed data',
+                      ? 'Get latest preview data'
+                      : 'Get final closed data',
                 ),
                 value: _isPreview,
                 onChanged: (bool value) {
@@ -4084,8 +4145,8 @@ class _TrialBalanceFilterPageState extends State<TrialBalanceFilterPage> {
               _isLoading
                   ? Center(child: CircularProgressIndicator())
                   : ElevatedButton.icon(
-                    icon: Icon(Icons.download),
-                    label: Text('Generate & Download PDF'),
+                    icon: Icon(Icons.visibility),
+                    label: Text('Generate & View PDF'),
                     style: ElevatedButton.styleFrom(
                       padding: EdgeInsets.symmetric(vertical: 15),
                       textStyle: TextStyle(fontSize: 16),
@@ -4110,10 +4171,26 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
   final _yearController = TextEditingController(
     text: DateTime.now().year.toString(),
   );
+  int _selectedMonth = DateTime.now().month;
   bool _isYearly = true;
   bool _isPreview = true;
   bool _isLoading = false;
   String? _downloadError;
+
+  final List<Map<String, dynamic>> _months = [
+    {'value': 1, 'name': 'January'},
+    {'value': 2, 'name': 'February'},
+    {'value': 3, 'name': 'March'},
+    {'value': 4, 'name': 'April'},
+    {'value': 5, 'name': 'May'},
+    {'value': 6, 'name': 'June'},
+    {'value': 7, 'name': 'July'},
+    {'value': 8, 'name': 'August'},
+    {'value': 9, 'name': 'September'},
+    {'value': 10, 'name': 'October'},
+    {'value': 11, 'name': 'November'},
+    {'value': 12, 'name': 'December'},
+  ];
 
   @override
   void dispose() {
@@ -4121,65 +4198,67 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
     super.dispose();
   }
 
-  // --- Download Function (Navigate to In-App Viewer) ---
   Future<void> _downloadReport(BuildContext context) async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _isLoading = true;
       _downloadError = null;
     });
-
-    String filePath = ''; // Store file path for navigation
+    String filePath = '';
 
     try {
-      // --- Permission Check Removed ---
-
-      // 2. Get Token
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('auth_token');
       if (token == null || token.isEmpty)
         throw Exception('Authentication required.');
-
-      // 3. Prepare Request
       final int? year = int.tryParse(_yearController.text);
       if (year == null) throw Exception('Invalid Year entered.');
-      final String reportType = 'Trial Balance'; // Identify report type
+
+      final String reportNameForTitle = 'Profit & Loss';
       final String previewStatus = _isPreview ? 'Preview' : 'Closed';
       final String endpointPath =
-          _isPreview ? '/api/API/GeneratePreviewLR' : '/api/API/GeneratePdfLR';
+          _isPreview
+              ? '/api/API/GeneratePreviewLR'
+              : '/api/API/GenerateClosedLR';
       final url = Uri.parse('$baseUrl$endpointPath');
-      final Map<String, dynamic> bodyMap = {"year": year};
+      final Map<String, dynamic> bodyMap = {
+        "year": year,
+        "month": _isYearly ? 0 : _selectedMonth,
+        "isYearly": _isYearly,
+      };
       final String requestBody = json.encode(bodyMap);
       final headers = {
         'Content-Type': 'application/json; charset=UTF-8',
         'Accept': 'application/pdf',
         'Authorization': 'Bearer $token',
       };
-      print("Requesting $reportType: $url with JSON body: $requestBody");
-
-      // 4. Make API Call
+      print("--- FLUTTER REQUEST (P&L - View) ---");
+      print("URL: $url");
+      print("Headers: $headers");
+      print("Body: $requestBody");
+      print("--- END FLUTTER REQUEST ---");
       final response = await http
           .post(url, headers: headers, body: requestBody)
           .timeout(Duration(seconds: 90));
 
       if (!mounted) return;
 
-      // 5. Handle Response
       if (response.statusCode == 200) {
         final Uint8List bytes = response.bodyBytes;
         if (bytes.isEmpty) throw Exception('Received empty file from server.');
-
-        // 6. Save File (Use temporary directory is fine for viewing)
-        final dir = await getTemporaryDirectory();
+        final tempDir = await getTemporaryDirectory();
+        final String monthString =
+            _isYearly
+                ? "Yearly"
+                : DateFormat('MMM').format(DateTime(0, _selectedMonth));
         final String filename =
-            '${reportType.replaceAll(' ', '_')}_${year}_$previewStatus.pdf';
-        final File file = File('${dir.path}/$filename');
+            '${reportNameForTitle.replaceAll(' ', '_').replaceAll('&', 'and')}_${year}_${monthString}_$previewStatus.pdf';
+        final File file = File('${tempDir.path}/$filename');
         await file.writeAsBytes(bytes);
-        filePath = file.path; // Store the path
-        print('PDF saved to ${filePath}');
+        filePath = file.path;
+        print('PDF saved temporarily to ${filePath}');
 
-        // 7. Navigate to PDF Viewer Page
-        if (!mounted) return; // Check again before navigation
+        if (!mounted) return;
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -4187,7 +4266,7 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
                 (context) => PdfViewerPage(
                   filePath: filePath,
                   reportName:
-                      '$reportType ($previewStatus $year)', // Pass info for title
+                      '$reportNameForTitle ($previewStatus $year - $monthString)',
                 ),
           ),
         );
@@ -4203,7 +4282,7 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
         } catch (_) {
           /* Ignore */
         }
-        print("Download Failed Body: ${response.body}");
+        print("Download Failed Body for P&L: ${response.body}");
         throw Exception(
           'Failed to download report. Server Response: ${response.statusCode} - $serverMessage',
         );
@@ -4211,10 +4290,10 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
     } on TimeoutException {
       _downloadError = "Request timed out while generating report.";
     } on FileSystemException catch (e) {
-      _downloadError = "Could not save file: ${e.message}";
+      _downloadError = "Could not save temporary file: ${e.message}";
       print("FileSystemException saving report: $e");
     } catch (e) {
-      print("Error downloading report: $e");
+      print("Error downloading P&L report: $e");
       _downloadError = "An error occurred: ${e.toString()}";
     } finally {
       if (mounted) {
@@ -4222,7 +4301,7 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
           _isLoading = false;
         });
       }
-    } // Reset loading indicator even on error
+    }
   }
 
   @override
@@ -4265,7 +4344,7 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
                 subtitle: Text(
                   _isYearly
                       ? 'Covers the entire selected year'
-                      : 'Covers only the last month of the year',
+                      : 'Select specific month below',
                 ),
                 value: _isYearly,
                 onChanged: (bool value) {
@@ -4274,17 +4353,46 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
                   });
                 },
                 secondary: Icon(
-                  _isYearly ? Icons.calendar_month : Icons.calendar_view_day,
+                  _isYearly ? Icons.calendar_month : Icons.date_range,
                 ),
                 contentPadding: EdgeInsets.zero,
               ),
               SizedBox(height: 8),
+              if (!_isYearly) ...[
+                DropdownButtonFormField<int>(
+                  decoration: InputDecoration(
+                    labelText: 'Month',
+                    border: OutlineInputBorder(),
+                  ),
+                  value: _selectedMonth,
+                  items:
+                      _months.map((Map<String, dynamic> month) {
+                        return DropdownMenuItem<int>(
+                          value: month['value'],
+                          child: Text(month['name']),
+                        );
+                      }).toList(),
+                  onChanged: (int? newValue) {
+                    if (newValue != null) {
+                      setState(() {
+                        _selectedMonth = newValue;
+                      });
+                    }
+                  },
+                  validator: (value) {
+                    if (!_isYearly && value == null)
+                      return 'Please select a month.';
+                    return null;
+                  },
+                ),
+                SizedBox(height: 16),
+              ],
               SwitchListTile(
                 title: Text('Preview Version'),
                 subtitle: Text(
                   _isPreview
-                      ? 'Get the latest preview data'
-                      : 'Get the final closed data',
+                      ? 'Get latest preview data'
+                      : 'Get final closed data',
                 ),
                 value: _isPreview,
                 onChanged: (bool value) {
@@ -4310,8 +4418,8 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
               _isLoading
                   ? Center(child: CircularProgressIndicator())
                   : ElevatedButton.icon(
-                    icon: Icon(Icons.download),
-                    label: Text('Generate & Download PDF'),
+                    icon: Icon(Icons.visibility),
+                    label: Text('Generate & View PDF'),
                     style: ElevatedButton.styleFrom(
                       padding: EdgeInsets.symmetric(vertical: 15),
                       textStyle: TextStyle(fontSize: 16),
@@ -4363,104 +4471,70 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   bool _isReady = false;
   String _errorMessage = '';
   PDFViewController? _pdfViewController;
-  bool _isSaving = false; // State for save button loading indicator
+  bool _isSharing = false;
 
-  // --- Function to Save/Copy the PDF to Downloads ---
-  // --- Function to Save/Copy the PDF to App-Specific External Dir ---
-  // --- Function to Save/Copy the PDF to App Documents Directory ---
-  Future<void> _savePdfToAppDocuments() async {
-    // Renamed for clarity
-    if (_isSaving) return;
+  Future<void> _shareOrSavePdf() async {
+    if (_isSharing) return;
     setState(() {
-      _isSaving = true;
+      _isSharing = true;
     });
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-    Directory? targetDir; // To store the target directory path
-    String filename = '';
-
     try {
-      // --- NO PERMISSION REQUEST NEEDED for App Documents ---
-
-      // 2. Get App Documents Directory (Works cross-platform)
-      targetDir = await getApplicationDocumentsDirectory();
-
-      // 3. Copy the File
-      final File originalFile = File(
-        widget.filePath,
-      ); // filePath is from getTemporaryDirectory()
-      if (!await originalFile.exists()) {
-        throw Exception(
-          "Original temporary file not found at ${widget.filePath}.",
-        );
+      final File fileToShare = File(widget.filePath);
+      if (!await fileToShare.exists()) {
+        throw Exception("File to share not found at ${widget.filePath}");
       }
 
-      filename = widget.filePath.split('/').last; // Get filename from temp path
-      final File newFile = File('${targetDir.path}/$filename');
-
-      // Perform the copy from temp to documents
-      await originalFile.copy(newFile.path);
-      print('PDF Copied from temp to App Documents: ${newFile.path}');
-
-      // --- Delete the temporary file (optional, good practice) ---
-      try {
-        await originalFile.delete();
-        print('Temporary file deleted: ${originalFile.path}');
-      } catch (e) {
-        print(
-          "Could not delete temporary file: $e",
-        ); // Log error, but don't stop execution
-      }
-      // ----------------------------------------------------------
-
-      // 4. Show Success Message with Clearer Location Info
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Report saved: $filename'), // Simpler message
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 5),
-          action: SnackBarAction(
-            label: 'FIND FILE', // More direct action label
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder:
-                    (_) => AlertDialog(
-                      title: Text('File Saved Location'),
-                      // Detailed explanation
-                      content: SelectableText(
-                        // Make path selectable
-                        'The report "$filename" was saved internally within the app\'s data.\n\n'
-                        'On Android, you might find it using a file manager app capable of showing app data at:\n'
-                        '${targetDir?.path}\n\n'
-                        '(Typically under Android/data/${'com.example.easytax'}/files)\n\n' // **<-- REPLACE with your app ID**
-                        'On iOS, use the Files app and look under "On My iPhone/iPad" > "${'Your App Name'}".', // **<-- REPLACE with your app name**
-                        textAlign: TextAlign.left,
-                      ),
-                      actions: [
-                        TextButton(
-                          child: Text('OK'),
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
-                      ],
-                    ),
-              );
-            },
-          ),
-        ),
+      final box = context.findRenderObject() as RenderBox?;
+      final shareResult = await Share.shareXFiles(
+        [XFile(fileToShare.path)],
+        text: 'Report: ${widget.reportName}',
+        subject: widget.reportName,
+        sharePositionOrigin:
+            box == null ? null : box.localToGlobal(Offset.zero) & box.size,
       );
+
+      if (shareResult.status == ShareResultStatus.success) {
+        print('Share sheet action successful for ${widget.reportName}');
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('File ready to be saved/shared!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+      } else if (shareResult.status == ShareResultStatus.dismissed) {
+        print('Share sheet dismissed for ${widget.reportName}');
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Save/Share cancelled.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+      } else {
+        print('Sharing failed for ${widget.reportName}: ${shareResult.status}');
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not open save/share options.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+      }
     } catch (e) {
-      print("Error saving PDF: $e");
+      print("Error sharing/saving PDF: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error saving file: ${e.toString()}'),
+          content: Text('Error: ${e.toString()}'),
           backgroundColor: Colors.red,
         ),
       );
     } finally {
       if (mounted) {
         setState(() {
-          _isSaving = false;
+          _isSharing = false;
         });
       }
     }
@@ -4472,8 +4546,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
       appBar: AppBar(
         title: Text(widget.reportName),
         actions: <Widget>[
-          // --- Add Save Button ---
-          _isSaving
+          _isSharing
               ? Padding(
                 padding: const EdgeInsets.only(right: 16.0),
                 child: Center(
@@ -4488,11 +4561,10 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
                 ),
               )
               : IconButton(
-                icon: Icon(Icons.save_alt),
-                tooltip: 'Save to Downloads',
-                onPressed: _savePdfToAppDocuments,
+                icon: Icon(Icons.share),
+                tooltip: 'Share / Save a Copy',
+                onPressed: _shareOrSavePdf,
               ),
-          // --------------------
           if (_totalPages > 0)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -4579,6 +4651,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
     );
   }
 }
+
 // ================================================================
 // END OF PDF VIEWER PAGE
 // ================================================================
