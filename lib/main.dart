@@ -142,6 +142,14 @@ class PurchaseJournalEntry {
   final String ValueStrdisc; // Formatted string for display
   final String transDateStr;
 
+  // --- NEW FIELDS ---
+  final String? entryUser;
+  final String? updateUser;
+  final String? flagAktif;
+  final String? entryDate;
+  final String? updateDate;
+  // ------------------
+
   PurchaseJournalEntry({
     required this.id,
     required this.companyId,
@@ -157,6 +165,13 @@ class PurchaseJournalEntry {
     required this.ValueStr,
     required this.ValueStrdisc,
     required this.transDateStr,
+    // --- Add to constructor ---
+    this.entryUser,
+    this.updateUser,
+    this.flagAktif,
+    this.entryDate,
+    this.updateDate,
+    // ------------------------
   });
 
   factory PurchaseJournalEntry.fromJson(Map<String, dynamic> json) {
@@ -192,6 +207,13 @@ class PurchaseJournalEntry {
       ValueStrdisc:
           json['valueDiscStr'] ?? '0,00', // Check API key ('valueDiscStr'?)
       transDateStr: json['transDateStr'] ?? '',
+      // --- Map NEW FIELDS from JSON ---
+      entryUser: json['entry_user'],
+      updateUser: json['update_user'],
+      flagAktif: json['flag_aktif'],
+      entryDate: json['entry_date'],
+      updateDate: json['update_date'],
+      // ------------------------------
     );
   }
 
@@ -217,7 +239,13 @@ class SalesJournalEntry {
   final String ValueStr; // Formatted string for display
   final String ValueStrdisc; // Formatted string for display
   final String transDateStr;
-
+  // --- NEW FIELDS ---
+  final String? entryUser;
+  final String? updateUser;
+  final String? flagAktif;
+  final String? entryDate;
+  final String? updateDate;
+  // ------------------
   SalesJournalEntry({
     required this.id,
     required this.companyId,
@@ -233,6 +261,13 @@ class SalesJournalEntry {
     required this.ValueStr,
     required this.ValueStrdisc,
     required this.transDateStr,
+    // --- Add to constructor ---
+    this.entryUser,
+    this.updateUser,
+    this.flagAktif,
+    this.entryDate,
+    this.updateDate,
+    // ------------------------
   });
 
   factory SalesJournalEntry.fromJson(Map<String, dynamic> json) {
@@ -268,6 +303,13 @@ class SalesJournalEntry {
       ValueStrdisc:
           json['valueDiscStr'] ?? '0,00', // Check API key ('valueDiscStr'?)
       transDateStr: json['transDateStr'] ?? '',
+      // --- Map NEW FIELDS from JSON ---
+      entryUser: json['entry_user'],
+      updateUser: json['update_user'],
+      flagAktif: json['flag_aktif'],
+      entryDate: json['entry_date'],
+      updateDate: json['update_date'],
+      // ------------------------------
     );
   }
 
@@ -436,6 +478,202 @@ class MemorialJournalDetail {
       updateDate != null
           ? DateFormat('dd MMM yyyy, HH:mm').format(updateDate!)
           : 'N/A';
+}
+
+// --- Data Model for DETAILED Purchase Journal Entry View ---
+class PurchaseJournalDetail {
+  final int id;
+  final String companyId;
+  final DateTime transDate;
+  final String transNo;
+  final String description;
+  final int akunDebit;
+  final int akunCredit;
+  final int akunDebitDisc; // Using your specified key: akun_Debit_disc
+  final int akunCreditDisc; // Using your specified key: akun_Credit_disc
+  final double value; // Using your specified key: value
+  final double valueDisc; // Using your specified key: value_Disc
+
+  // Detail fields
+  final String? entryUser;
+  final String? updateUser;
+  final String? flagAktif;
+  final String? entryDate; // API sends as String
+  final String? updateDate; // API sends as String
+
+  // Formatted string getters (will be populated by fromJson if API returns null for string versions)
+  final String valueStr;
+  final String valueDiscStr;
+
+  PurchaseJournalDetail({
+    required this.id,
+    required this.companyId,
+    required this.transDate,
+    required this.transNo,
+    required this.description,
+    required this.akunDebit,
+    required this.akunCredit,
+    required this.akunDebitDisc,
+    required this.akunCreditDisc,
+    required this.value,
+    required this.valueDisc,
+    required this.valueStr,
+    required this.valueDiscStr,
+    this.entryUser,
+    this.updateUser,
+    this.flagAktif,
+    this.entryDate,
+    this.updateDate,
+  });
+
+  factory PurchaseJournalDetail.fromJson(Map<String, dynamic> json) {
+    double parseDouble(dynamic val) {
+      if (val == null) return 0.0;
+      if (val is double) return val;
+      if (val is int) return val.toDouble();
+      if (val is String) {
+        final cleaned = val.replaceAll(RegExp(r'[.]'), '').replaceAll(',', '.');
+        return double.tryParse(cleaned) ?? 0.0;
+      }
+      return 0.0;
+    }
+
+    String formatAmount(double amount) {
+      return NumberFormat("#,##0.00", "id_ID").format(amount);
+    }
+
+    return PurchaseJournalDetail(
+      id: json['id'] ?? 0,
+      companyId: json['company_id'] ?? '',
+      transDate:
+          DateTime.tryParse(json['transDate'] ?? '') ?? DateTime(1970, 1, 1),
+      transNo: json['trans_no'] ?? 'N/A',
+      description: json['description'] ?? 'No Description',
+      akunDebit: json['akun_Debit'] ?? 0,
+      akunCredit: json['akun_Credit'] ?? 0,
+      akunDebitDisc: json['akun_Debit_disc'] ?? 0, // Key from your sample
+      akunCreditDisc: json['akun_Credit_disc'] ?? 0, // Key from your sample
+      value: parseDouble(json['value']), // Key from your sample
+      valueDisc: parseDouble(json['value_Disc']), // Key from your sample
+
+      valueStr: json['valueStr'] ?? formatAmount(parseDouble(json['value'])),
+      valueDiscStr:
+          json['valueDiscStr'] ?? formatAmount(parseDouble(json['value_Disc'])),
+
+      entryUser: json['entry_user'],
+      updateUser: json['update_user'],
+      flagAktif: json['flag_aktif'],
+      entryDate: json['entry_date'],
+      updateDate: json['update_date'],
+    );
+  }
+
+  String get formattedDate => DateFormat('dd MMM yyyy').format(transDate);
+  String get formattedValue => valueStr;
+  String get formattedValueDisc => valueDiscStr;
+}
+
+// --- Data Model for DETAILED Sales Journal Entry View ---
+// This will be identical to PurchaseJournalDetail if both detail APIs return the same structure
+// with 'value' and 'value_Disc'. If Sales detail API uses 'debit'/'credit', this needs adjustment.
+// For now, assuming it's the same as Purchase Detail based on your request.
+class SalesJournalDetail {
+  final int id;
+  final String companyId;
+  final DateTime transDate;
+  final String transNo;
+  final String description;
+  final int akunDebit;
+  final int akunCredit;
+  final int akunDebitDisc;
+  final int akunCreditDisc;
+  final double
+  value; // For Sales, 'value' might represent Total Sales Revenue (Credit side typically)
+  final double
+  valueDisc; // For Sales, 'valueDisc' might represent Sales Discount (Debit side typically)
+
+  // Detail fields
+  final String? entryUser;
+  final String? updateUser;
+  final String? flagAktif;
+  final String? entryDate;
+  final String? updateDate;
+
+  final String valueStr;
+  final String valueDiscStr;
+
+  SalesJournalDetail({
+    required this.id,
+    required this.companyId,
+    required this.transDate,
+    required this.transNo,
+    required this.description,
+    required this.akunDebit,
+    required this.akunCredit,
+    required this.akunDebitDisc,
+    required this.akunCreditDisc,
+    required this.value,
+    required this.valueDisc,
+    required this.valueStr,
+    required this.valueDiscStr,
+    this.entryUser,
+    this.updateUser,
+    this.flagAktif,
+    this.entryDate,
+    this.updateDate,
+  });
+
+  factory SalesJournalDetail.fromJson(Map<String, dynamic> json) {
+    double parseDouble(dynamic val) {
+      /* ... same helper ... */
+      if (val == null) return 0.0;
+      if (val is double) return val;
+      if (val is int) return val.toDouble();
+      if (val is String) {
+        final cleaned = val.replaceAll(RegExp(r'[.]'), '').replaceAll(',', '.');
+        return double.tryParse(cleaned) ?? 0.0;
+      }
+      return 0.0;
+    }
+
+    String formatAmount(double amount) {
+      /* ... same helper ... */
+      return NumberFormat("#,##0.00", "id_ID").format(amount);
+    }
+
+    return SalesJournalDetail(
+      id: json['id'] ?? 0,
+      companyId: json['company_id'] ?? '',
+      transDate:
+          DateTime.tryParse(json['transDate'] ?? '') ?? DateTime(1970, 1, 1),
+      transNo: json['trans_no'] ?? 'N/A',
+      description: json['description'] ?? 'No Description',
+      akunDebit: json['akun_Debit'] ?? 0,
+      akunCredit: json['akun_Credit'] ?? 0,
+      akunDebitDisc: json['akun_Debit_disc'] ?? 0,
+      akunCreditDisc: json['akun_Credit_disc'] ?? 0,
+      value: parseDouble(
+        json['value'],
+      ), // Assuming Sales Detail API uses 'value'
+      valueDisc: parseDouble(
+        json['value_Disc'],
+      ), // Assuming Sales Detail API uses 'value_Disc'
+
+      valueStr: json['valueStr'] ?? formatAmount(parseDouble(json['value'])),
+      valueDiscStr:
+          json['valueDiscStr'] ?? formatAmount(parseDouble(json['value_Disc'])),
+
+      entryUser: json['entry_user'],
+      updateUser: json['update_user'],
+      flagAktif: json['flag_aktif'],
+      entryDate: json['entry_date'],
+      updateDate: json['update_date'],
+    );
+  }
+
+  String get formattedDate => DateFormat('dd MMM yyyy').format(transDate);
+  String get formattedValue => valueStr;
+  String get formattedValueDisc => valueDiscStr;
 }
 
 // --- Main Application Entry Point ---
@@ -3460,6 +3698,19 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
               DataCell(Text(entry.formattedValue)), // Use formattedDebit
               DataCell(Text(entry.formattedValueDisc)), // Use formattedCredit
             ],
+            onSelectChanged: (bool? selected) {
+              if (selected ?? false) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder:
+                        (context) => ViewSalesJournalEntryPage(
+                          entryId: entry.id,
+                        ), // Pass ID
+                  ),
+                );
+              }
+            },
           );
         }).toList();
     // -----------------------------------------
@@ -3916,6 +4167,19 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
                 Text(entry.formattedValueDisc),
               ), // Use formattedValueDisc
             ],
+            onSelectChanged: (bool? selected) {
+              if (selected ?? false) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder:
+                        (context) => ViewPurchaseJournalEntryPage(
+                          entryId: entry.id,
+                        ), // Pass ID
+                  ),
+                );
+              }
+            },
           );
         }).toList();
     return SingleChildScrollView(
@@ -5408,4 +5672,714 @@ class _ViewMemorialJournalEntryPageState
 }
 // ================================================================
 // END OF VIEW MEMORIAL JOURNAL ENTRY PAGE
+// ================================================================
+
+// ================================================================
+// VIEW PURCHASE JOURNAL ENTRY PAGE (Using PurchaseJournalDetail)
+// ================================================================
+class ViewPurchaseJournalEntryPage extends StatefulWidget {
+  final int entryId;
+  const ViewPurchaseJournalEntryPage({Key? key, required this.entryId})
+    : super(key: key);
+  @override
+  _ViewPurchaseJournalEntryPageState createState() =>
+      _ViewPurchaseJournalEntryPageState();
+}
+
+class _ViewPurchaseJournalEntryPageState
+    extends State<ViewPurchaseJournalEntryPage> {
+  PurchaseJournalDetail? _entry; // Use the new Detail model
+  // ... (account name state variables remain the same)
+  String? _debitAccountName;
+  String? _creditAccountName;
+  String? _debitAccountDiscName;
+  String? _creditAccountDiscName;
+
+  bool _isLoadingData = true;
+  String? _fetchError;
+
+  // (Account cache logic remains the same)
+  static List<Account> _allAccountsCache = [];
+  static bool _accountsCachePopulated = false;
+  static bool _isFetchingAccountsGlobal = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchEntryAndAccountDetails();
+  }
+
+  Future<void> _fetchAllAccountsIfNeeded() async {
+    /* ... same ... */
+    if (_accountsCachePopulated || _isFetchingAccountsGlobal) return;
+    _isFetchingAccountsGlobal = true;
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Auth token missing for accounts fetch.');
+      final url = Uri.parse('$baseUrl/api/API/getddAccount');
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(Duration(seconds: 20));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        _allAccountsCache =
+            data.map((jsonItem) => Account.fromJson(jsonItem)).toList();
+        _accountsCachePopulated = true;
+      } else {
+        throw Exception(
+          'Failed to load account list. Status: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      print("Error fetching global account list: $e");
+    } finally {
+      _isFetchingAccountsGlobal = false;
+    }
+  }
+
+  Future<void> _fetchEntryAndAccountDetails() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingData = true;
+      _fetchError = null;
+    });
+    try {
+      await _fetchAllAccountsIfNeeded();
+      if (!mounted) return;
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Authentication required.');
+
+      final url = Uri.parse(
+        '$baseUrl/api/API/ViewJPB?id=${widget.entryId}',
+      ); // Correct endpoint
+      final headers = {'Authorization': 'Bearer $token'};
+      print("Fetching Purchase Journal Detail: $url");
+      final response = await http
+          .post(url, headers: headers)
+          .timeout(Duration(seconds: 30));
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(
+          utf8.decode(response.bodyBytes),
+        );
+        final fetchedEntry = PurchaseJournalDetail.fromJson(
+          data,
+        ); // Use new Detail model
+
+        // Account name lookup logic remains the same, using fetchedEntry fields
+        String? debitName = "Acc: ${fetchedEntry.akunDebit}";
+        String? creditName = "Acc: ${fetchedEntry.akunCredit}";
+        String? debitDiscName =
+            fetchedEntry.akunDebitDisc != 0
+                ? "Acc: ${fetchedEntry.akunDebitDisc}"
+                : null;
+        String? creditDiscName =
+            fetchedEntry.akunCreditDisc != 0
+                ? "Acc: ${fetchedEntry.akunCreditDisc}"
+                : null;
+
+        if (_accountsCachePopulated) {
+          final debitAcc = _allAccountsCache.firstWhere(
+            (acc) => acc.accountNo == fetchedEntry.akunDebit,
+            orElse:
+                () => Account(
+                  accountNo: fetchedEntry.akunDebit,
+                  accountName: '(Unknown)',
+                ),
+          );
+          debitName = '${debitAcc.accountName}';
+          final creditAcc = _allAccountsCache.firstWhere(
+            (acc) => acc.accountNo == fetchedEntry.akunCredit,
+            orElse:
+                () => Account(
+                  accountNo: fetchedEntry.akunCredit,
+                  accountName: '(Unknown)',
+                ),
+          );
+          creditName = '${creditAcc.accountName}';
+          if (fetchedEntry.akunDebitDisc != 0) {
+            final debitDiscAcc = _allAccountsCache.firstWhere(
+              (acc) => acc.accountNo == fetchedEntry.akunDebitDisc,
+              orElse:
+                  () => Account(
+                    accountNo: fetchedEntry.akunDebitDisc,
+                    accountName: '(Unknown)',
+                  ),
+            );
+            debitDiscName = '${debitDiscAcc.accountName}';
+          }
+          if (fetchedEntry.akunCreditDisc != 0) {
+            final creditDiscAcc = _allAccountsCache.firstWhere(
+              (acc) => acc.accountNo == fetchedEntry.akunCreditDisc,
+              orElse:
+                  () => Account(
+                    accountNo: fetchedEntry.akunCreditDisc,
+                    accountName: '(Unknown)',
+                  ),
+            );
+            creditDiscName = '${creditDiscAcc.accountName}';
+          }
+        }
+        if (mounted) {
+          setState(() {
+            _entry = fetchedEntry;
+            _debitAccountName = debitName;
+            _creditAccountName = creditName;
+            _debitAccountDiscName = debitDiscName;
+            _creditAccountDiscName = creditDiscName;
+            _isLoadingData = false;
+          });
+        }
+      } else {
+        throw Exception(
+          'Failed to load purchase entry details. Status: ${response.statusCode}\nBody: ${response.body}',
+        );
+      }
+    } catch (e) {
+      print("Error fetching purchase entry details: $e");
+      if (mounted) {
+        setState(() {
+          _fetchError = e.toString();
+          _isLoadingData = false;
+        });
+      }
+    }
+  }
+
+  Widget _buildDetailRow(String label, String? value, {bool isAmount = false}) {
+    /* ... same ... */
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 150,
+            child: Text(
+              '$label:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              value ?? 'N/A',
+              style: TextStyle(fontSize: 16),
+              textAlign: isAmount ? TextAlign.right : TextAlign.left,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDisplayDate(String? dateString) {
+    /* ... same ... */
+    if (dateString == null || dateString.isEmpty) return 'N/A';
+    try {
+      if (dateString.startsWith("0001-01-01")) return 'N/A (Default Date)';
+      DateTime parsedDate = DateTime.parse(dateString);
+      return DateFormat('dd MMM yyyy, HH:mm').format(parsedDate);
+    } catch (e) {
+      print("Error parsing date '$dateString': $e");
+      return 'Invalid Date';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoadingData) {
+      /* ... loading ... */
+      return Scaffold(
+        appBar: AppBar(title: Text('Loading Purchase...')),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_fetchError != null || _entry == null) {
+      /* ... error ... */
+      return Scaffold(
+        appBar: AppBar(title: Text('Error')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              'Error loading details: ${_fetchError ?? "Entry not found."}',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final entry = _entry!;
+    final String valueAmount =
+        entry.formattedValue; // From PurchaseJournalDetail
+    final String valueDiscAmount =
+        entry.formattedValueDisc; // From PurchaseJournalDetail
+
+    return Scaffold(
+      appBar: AppBar(title: Text('Purchase Detail: ${entry.transNo}')),
+      body: RefreshIndicator(
+        onRefresh: _fetchEntryAndAccountDetails,
+        child: SingleChildScrollView(
+          physics: AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16.0),
+          child: Card(
+            elevation: 2.0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8.0),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Center(
+                    child: Text(
+                      'Purchase Entry Details',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Divider(height: 30, thickness: 1),
+                  _buildDetailRow('Transaction No', entry.transNo),
+                  _buildDetailRow('Transaction Date', entry.formattedDate),
+                  _buildDetailRow('Description', entry.description),
+                  Divider(height: 20),
+                  _buildDetailRow(
+                    'Debit Account',
+                    _debitAccountName ?? entry.akunDebit.toString(),
+                  ),
+                  _buildDetailRow('Value', valueAmount, isAmount: true),
+                  SizedBox(height: 10),
+                  _buildDetailRow(
+                    'Credit Account',
+                    _creditAccountName ?? entry.akunCredit.toString(),
+                  ),
+                  SizedBox(height: 10),
+                  if (entry.valueDisc != 0 ||
+                      (entry.akunDebitDisc != 0 &&
+                          _debitAccountDiscName != null) ||
+                      (entry.akunCreditDisc != 0 &&
+                          _creditAccountDiscName != null)) ...[
+                    Text(
+                      'Discount Details:',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(height: 5),
+                    _buildDetailRow(
+                      'Debit Disc Acc',
+                      _debitAccountDiscName ??
+                          (entry.akunDebitDisc != 0
+                              ? entry.akunDebitDisc.toString()
+                              : 'N/A'),
+                    ),
+                    _buildDetailRow(
+                      'Value Discount',
+                      valueDiscAmount,
+                      isAmount: true,
+                    ),
+                    SizedBox(height: 10),
+                    _buildDetailRow(
+                      'Credit Disc Acc',
+                      _creditAccountDiscName ??
+                          (entry.akunCreditDisc != 0
+                              ? entry.akunCreditDisc.toString()
+                              : 'N/A'),
+                    ),
+                  ],
+                  Divider(height: 30, thickness: 1),
+                  _buildDetailRow('Entry User', entry.entryUser),
+                  _buildDetailRow(
+                    'Entry Date',
+                    _formatDisplayDate(entry.entryDate),
+                  ),
+                  SizedBox(height: 5),
+                  _buildDetailRow('Last Update User', entry.updateUser),
+                  _buildDetailRow(
+                    'Last Update Date',
+                    _formatDisplayDate(entry.updateDate),
+                  ),
+                  _buildDetailRow('Flag Aktif', entry.flagAktif),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ================================================================
+// END OF VIEW PURCHASE JOURNAL ENTRY PAGE
+// ================================================================
+// ================================================================
+// VIEW SALES JOURNAL ENTRY PAGE (Using SalesJournalDetail)
+// ================================================================
+class ViewSalesJournalEntryPage extends StatefulWidget {
+  final int entryId;
+  const ViewSalesJournalEntryPage({Key? key, required this.entryId})
+    : super(key: key);
+  @override
+  _ViewSalesJournalEntryPageState createState() =>
+      _ViewSalesJournalEntryPageState();
+}
+
+class _ViewSalesJournalEntryPageState extends State<ViewSalesJournalEntryPage> {
+  SalesJournalDetail? _entry; // Use the new Detail model
+  // ... (account name state variables remain the same)
+  String? _debitAccountName;
+  String? _creditAccountName;
+  String? _debitAccountDiscName;
+  String? _creditAccountDiscName;
+
+  bool _isLoadingData = true;
+  String? _fetchError;
+
+  // (Account cache logic remains the same)
+  static List<Account> _allAccountsCache = [];
+  static bool _accountsCachePopulated = false;
+  static bool _isFetchingAccountsGlobal = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchEntryAndAccountDetails();
+  }
+
+  Future<void> _fetchAllAccountsIfNeeded() async {
+    /* ... same ... */
+    if (_accountsCachePopulated || _isFetchingAccountsGlobal) return;
+    _isFetchingAccountsGlobal = true;
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Auth token missing for accounts fetch.');
+      final url = Uri.parse('$baseUrl/api/API/getddAccount');
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(Duration(seconds: 20));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        _allAccountsCache =
+            data.map((jsonItem) => Account.fromJson(jsonItem)).toList();
+        _accountsCachePopulated = true;
+      } else {
+        throw Exception(
+          'Failed to load account list. Status: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      print("Error fetching global account list: $e");
+    } finally {
+      _isFetchingAccountsGlobal = false;
+    }
+  }
+
+  Future<void> _fetchEntryAndAccountDetails() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingData = true;
+      _fetchError = null;
+    });
+    try {
+      await _fetchAllAccountsIfNeeded();
+      if (!mounted) return;
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Authentication required.');
+
+      final url = Uri.parse(
+        '$baseUrl/api/API/ViewJPN?id=${widget.entryId}',
+      ); // Correct endpoint for Sales
+      final headers = {'Authorization': 'Bearer $token'};
+      print("Fetching Sales Journal Detail: $url");
+      final response = await http
+          .post(url, headers: headers)
+          .timeout(Duration(seconds: 30));
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(
+          utf8.decode(response.bodyBytes),
+        );
+        final fetchedEntry = SalesJournalDetail.fromJson(
+          data,
+        ); // Use new Detail model
+
+        // Account name lookup logic remains the same, using fetchedEntry fields
+        String? debitName = "Acc: ${fetchedEntry.akunDebit}";
+        String? creditName = "Acc: ${fetchedEntry.akunCredit}";
+        String? debitDiscName =
+            fetchedEntry.akunDebitDisc != 0
+                ? "Acc: ${fetchedEntry.akunDebitDisc}"
+                : null;
+        String? creditDiscName =
+            fetchedEntry.akunCreditDisc != 0
+                ? "Acc: ${fetchedEntry.akunCreditDisc}"
+                : null;
+
+        if (_accountsCachePopulated) {
+          final debitAcc = _allAccountsCache.firstWhere(
+            (acc) => acc.accountNo == fetchedEntry.akunDebit,
+            orElse:
+                () => Account(
+                  accountNo: fetchedEntry.akunDebit,
+                  accountName: '(Unknown)',
+                ),
+          );
+          debitName = '${debitAcc.accountName}';
+          final creditAcc = _allAccountsCache.firstWhere(
+            (acc) => acc.accountNo == fetchedEntry.akunCredit,
+            orElse:
+                () => Account(
+                  accountNo: fetchedEntry.akunCredit,
+                  accountName: '(Unknown)',
+                ),
+          );
+          creditName = '${creditAcc.accountName}';
+          if (fetchedEntry.akunDebitDisc != 0) {
+            final debitDiscAcc = _allAccountsCache.firstWhere(
+              (acc) => acc.accountNo == fetchedEntry.akunDebitDisc,
+              orElse:
+                  () => Account(
+                    accountNo: fetchedEntry.akunDebitDisc,
+                    accountName: '(Unknown)',
+                  ),
+            );
+            debitDiscName = '${debitDiscAcc.accountName}';
+          }
+          if (fetchedEntry.akunCreditDisc != 0) {
+            final creditDiscAcc = _allAccountsCache.firstWhere(
+              (acc) => acc.accountNo == fetchedEntry.akunCreditDisc,
+              orElse:
+                  () => Account(
+                    accountNo: fetchedEntry.akunCreditDisc,
+                    accountName: '(Unknown)',
+                  ),
+            );
+            creditDiscName = '${creditDiscAcc.accountName}';
+          }
+        }
+        if (mounted) {
+          setState(() {
+            _entry = fetchedEntry;
+            _debitAccountName = debitName;
+            _creditAccountName = creditName;
+            _debitAccountDiscName = debitDiscName;
+            _creditAccountDiscName = creditDiscName;
+            _isLoadingData = false;
+          });
+        }
+      } else {
+        throw Exception(
+          'Failed to load sales entry details. Status: ${response.statusCode}\nBody: ${response.body}',
+        );
+      }
+    } catch (e) {
+      print("Error fetching sales entry details: $e");
+      if (mounted) {
+        setState(() {
+          _fetchError = e.toString();
+          _isLoadingData = false;
+        });
+      }
+    }
+  }
+
+  Widget _buildDetailRow(String label, String? value, {bool isAmount = false}) {
+    /* ... same ... */
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 150,
+            child: Text(
+              '$label:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              value ?? 'N/A',
+              style: TextStyle(fontSize: 16),
+              textAlign: isAmount ? TextAlign.right : TextAlign.left,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDisplayDate(String? dateString) {
+    /* ... same ... */
+    if (dateString == null || dateString.isEmpty) return 'N/A';
+    try {
+      if (dateString.startsWith("0001-01-01")) return 'N/A (Default Date)';
+      DateTime parsedDate = DateTime.parse(dateString);
+      return DateFormat('dd MMM yyyy, HH:mm').format(parsedDate);
+    } catch (e) {
+      print("Error parsing date '$dateString': $e");
+      return 'Invalid Date';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoadingData) {
+      /* ... loading ... */
+      return Scaffold(
+        appBar: AppBar(title: Text('Loading Sales...')),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_fetchError != null || _entry == null) {
+      /* ... error ... */
+      return Scaffold(
+        appBar: AppBar(title: Text('Error')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              'Error loading details: ${_fetchError ?? "Entry not found."}',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final entry = _entry!;
+    // --- Use formattedValue and formattedValueDisc from SalesJournalDetail ---
+    final String valueAmount = entry.formattedValue;
+    final String valueDiscAmount = entry.formattedValueDisc;
+    // ----------------------------------------------------------------------
+
+    return Scaffold(
+      appBar: AppBar(title: Text('Sales Detail: ${entry.transNo}')),
+      body: RefreshIndicator(
+        onRefresh: _fetchEntryAndAccountDetails,
+        child: SingleChildScrollView(
+          physics: AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16.0),
+          child: Card(
+            elevation: 2.0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8.0),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Center(
+                    child: Text(
+                      'Sales Entry Details',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Divider(height: 30, thickness: 1),
+                  _buildDetailRow('Transaction No', entry.transNo),
+                  _buildDetailRow('Transaction Date', entry.formattedDate),
+                  _buildDetailRow('Description', entry.description),
+                  Divider(height: 20),
+                  _buildDetailRow(
+                    'Debit Account',
+                    _debitAccountName ?? entry.akunDebit.toString(),
+                  ),
+                  _buildDetailRow(
+                    'Sales Value (Debit)',
+                    valueAmount,
+                    isAmount: true,
+                  ), // Typically DR A/R or Cash
+                  SizedBox(height: 10),
+                  _buildDetailRow(
+                    'Credit Account',
+                    _creditAccountName ?? entry.akunCredit.toString(),
+                  ),
+                  _buildDetailRow(
+                    'Sales Revenue (Credit)',
+                    valueAmount,
+                    isAmount: true,
+                  ), // Typically CR Sales Revenue
+                  SizedBox(height: 10),
+                  if (entry.valueDisc != 0 ||
+                      (entry.akunDebitDisc != 0 &&
+                          _debitAccountDiscName != null) ||
+                      (entry.akunCreditDisc != 0 &&
+                          _creditAccountDiscName != null)) ...[
+                    Text(
+                      'Discount Details:',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(height: 5),
+                    _buildDetailRow(
+                      'Debit Disc Acc',
+                      _debitAccountDiscName ??
+                          (entry.akunDebitDisc != 0
+                              ? entry.akunDebitDisc.toString()
+                              : 'N/A'),
+                    ),
+                    _buildDetailRow(
+                      'Sales Discount (Debit)',
+                      valueDiscAmount,
+                      isAmount: true,
+                    ),
+                    SizedBox(height: 10),
+                    _buildDetailRow(
+                      'Credit Disc Acc',
+                      _creditAccountDiscName ??
+                          (entry.akunCreditDisc != 0
+                              ? entry.akunCreditDisc.toString()
+                              : 'N/A'),
+                    ),
+                  ],
+                  Divider(height: 30, thickness: 1),
+                  _buildDetailRow('Entry User', entry.entryUser),
+                  _buildDetailRow(
+                    'Entry Date',
+                    _formatDisplayDate(entry.entryDate),
+                  ),
+                  SizedBox(height: 5),
+                  _buildDetailRow('Last Update User', entry.updateUser),
+                  _buildDetailRow(
+                    'Last Update Date',
+                    _formatDisplayDate(entry.updateDate),
+                  ),
+                  _buildDetailRow('Flag Aktif', entry.flagAktif),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+// ================================================================
+// END OF VIEW SALES JOURNAL ENTRY PAGE
 // ================================================================
