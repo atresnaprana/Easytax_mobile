@@ -18,6 +18,8 @@ import 'package:share_plus/share_plus.dart';
 const String baseUrl = 'http://192.168.100.176:13080'; // ADJUST AS NEEDED
 
 // --- Data Model Class for Memorial Journal Entry ---
+// --- ORIGINAL Data Model Class for Memorial Journal LIST VIEW ---
+// --- Data Model Class for Memorial Journal Entry (UPDATED) ---
 class MemorialJournalEntry {
   final int id;
   final String companyId;
@@ -28,9 +30,18 @@ class MemorialJournalEntry {
   final int akunCredit;
   final double debit;
   final double credit;
-  final String debitStr;
-  final String creditStr;
+  final String debitStr; // Keep as is for existing list view
+  final String creditStr; // Keep as is for existing list view
   final String transDateStr;
+
+  // --- NEW FIELDS ---
+  final String? entryUser;
+  final String? updateUser;
+  final String? flagAktif;
+  // Store API date strings, parse for display
+  final String? entryDate; // e.g., "2025-01-12T21:46:14"
+  final String? updateDate; // e.g., "2025-01-12T21:46:14"
+  // ------------------
 
   MemorialJournalEntry({
     required this.id,
@@ -45,6 +56,13 @@ class MemorialJournalEntry {
     required this.debitStr,
     required this.creditStr,
     required this.transDateStr,
+    // --- Add to constructor ---
+    this.entryUser,
+    this.updateUser,
+    this.flagAktif,
+    this.entryDate,
+    this.updateDate,
+    // ------------------------
   });
 
   factory MemorialJournalEntry.fromJson(Map<String, dynamic> json) {
@@ -71,9 +89,33 @@ class MemorialJournalEntry {
       akunCredit: json['akun_Credit'] ?? 0,
       debit: parseDouble(json['debit']),
       credit: parseDouble(json['credit']),
-      debitStr: json['debitStr'] ?? '0,00',
-      creditStr: json['creditStr'] ?? '0,00',
-      transDateStr: json['transDateStr'] ?? '',
+      // Use keys from your list API if they differ, but from your sample they seem to be null here
+      debitStr:
+          json['debitStr'] ??
+          NumberFormat.currency(
+            locale: 'id_ID',
+            symbol: '',
+            decimalDigits: 2,
+          ).format(parseDouble(json['debit'])),
+      creditStr:
+          json['creditStr'] ??
+          NumberFormat.currency(
+            locale: 'id_ID',
+            symbol: '',
+            decimalDigits: 2,
+          ).format(parseDouble(json['credit'])),
+      transDateStr:
+          json['transDateStr'] ??
+          '', // Or DateFormat('dd MMM yyyy').format(DateTime.tryParse(json['transDate'] ?? '') ?? DateTime(1970))
+      // --- Map NEW FIELDS from JSON ---
+      entryUser: json['entry_user'], // Directly from JSON
+      updateUser: json['update_user'],
+      flagAktif: json['flag_aktif'],
+      entryDate:
+          json['entry_date'], // API sends as String "2025-01-12T21:46:14"
+      updateDate:
+          json['update_date'], // API sends as String "2025-01-12T21:46:14"
+      // ------------------------------
     );
   }
 
@@ -292,6 +334,108 @@ class ThousandsFormatter extends TextInputFormatter {
       return oldValue;
     }
   }
+}
+
+// --- NEW Data Model Class for Memorial Journal DETAIL VIEW ---
+class MemorialJournalDetail {
+  final int id;
+  final String companyId;
+  final DateTime transDate;
+  final String transNo;
+  final String description;
+  final int akunDebit; // Account Number for Debit
+  final int akunCredit; // Account Number for Credit
+  final double debit; // Numeric value for Debit
+  final double credit; // Numeric value for Credit
+  final String? entryUser;
+  final String? updateUser;
+  final String? flagAktif;
+  final DateTime? updateDate;
+  final DateTime? entryDate;
+  // final List<Account>? dddbacc; // This was null in your sample, handle if it can be present
+  // final String? debitStr;      // This was null in your sample
+  // final String? creditStr;     // This was null in your sample
+
+  // For displaying account names after fetching them separately
+  String debitAccountName;
+  String creditAccountName;
+
+  MemorialJournalDetail({
+    required this.id,
+    required this.companyId,
+    required this.transDate,
+    required this.transNo,
+    required this.description,
+    required this.akunDebit,
+    required this.akunCredit,
+    required this.debit,
+    required this.credit,
+    this.entryUser,
+    this.updateUser,
+    this.flagAktif,
+    this.updateDate,
+    this.entryDate,
+    // this.dddbacc,
+    // this.debitStr,
+    // this.creditStr,
+    this.debitAccountName = '', // Initialize
+    this.creditAccountName = '', // Initialize
+  });
+
+  factory MemorialJournalDetail.fromJson(Map<String, dynamic> json) {
+    // Helper to parse numeric fields that might come as int or double
+    double parseNumeric(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is double) return value;
+      if (value is int) return value.toDouble();
+      // Should not expect string for numeric values in this specific API response
+      return 0.0;
+    }
+
+    return MemorialJournalDetail(
+      id: json['id'] ?? 0,
+      companyId: json['company_id'] ?? '',
+      transDate: DateTime.tryParse(json['transDate'] ?? '') ?? DateTime(1970),
+      transNo: json['trans_no'] ?? 'N/A',
+      description: json['description'] ?? 'No Description',
+      akunDebit: json['akun_Debit'] ?? 0,
+      akunCredit: json['akun_Credit'] ?? 0,
+      debit: parseNumeric(json['debit']), // API returns numbers for detail
+      credit: parseNumeric(json['credit']), // API returns numbers for detail
+      entryUser: json['entry_user'],
+      updateUser: json['update_user'],
+      flagAktif: json['flag_aktif'],
+      updateDate: DateTime.tryParse(json['update_date'] ?? ''),
+      entryDate: DateTime.tryParse(json['entry_date'] ?? ''),
+      // dddbacc: (json['dddbacc'] as List?)?.map((accJson) => Account.fromJson(accJson)).toList(),
+      // debitStr: json['debitStr'], // These are null in your sample
+      // creditStr: json['creditStr'],
+    );
+  }
+
+  // Formatted date
+  String get formattedDateDisplay =>
+      DateFormat('dd MMM yyyy').format(transDate);
+
+  // Formatter for numeric debit/credit values
+  String get formattedDebitValue {
+    final formatter = NumberFormat.decimalPattern('id'); // For "100.000.000"
+    return formatter.format(debit);
+  }
+
+  String get formattedCreditValue {
+    final formatter = NumberFormat.decimalPattern('id');
+    return formatter.format(credit);
+  }
+
+  String get formattedEntryDate =>
+      entryDate != null
+          ? DateFormat('dd MMM yyyy, HH:mm').format(entryDate!)
+          : 'N/A';
+  String get formattedUpdateDate =>
+      updateDate != null
+          ? DateFormat('dd MMM yyyy, HH:mm').format(updateDate!)
+          : 'N/A';
 }
 
 // --- Main Application Entry Point ---
@@ -2829,12 +2973,28 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
         _filteredEntries.map((entry) {
           return DataRow(
             cells: [
+              /* ... DataCell definitions ... */
               DataCell(Text(entry.formattedDate)),
               DataCell(Text(entry.transNo)),
               DataCell(Text(entry.description)),
               DataCell(Text(entry.formattedDebit)),
               DataCell(Text(entry.formattedCredit)),
             ],
+            // --- ADD onSelectChanged to handle row tap ---
+            onSelectChanged: (bool? selected) {
+              if (selected ?? false) {
+                // Ensure it's a tap and not a deselect
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder:
+                        (context) =>
+                            ViewMemorialJournalEntryPage(entryId: entry.id),
+                  ),
+                );
+              }
+            },
+            // -----------------------------------------------
           );
         }).toList();
     return SingleChildScrollView(
@@ -4937,4 +5097,315 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
 
 // ================================================================
 // END OF PDF VIEWER PAGE
+// ================================================================
+
+// ================================================================
+// VIEW MEMORIAL JOURNAL ENTRY PAGE (Fetches its own details)
+// ================================================================
+class ViewMemorialJournalEntryPage extends StatefulWidget {
+  final int entryId; // Receive only the ID
+
+  const ViewMemorialJournalEntryPage({Key? key, required this.entryId})
+    : super(key: key);
+
+  @override
+  _ViewMemorialJournalEntryPageState createState() =>
+      _ViewMemorialJournalEntryPageState();
+}
+
+class _ViewMemorialJournalEntryPageState
+    extends State<ViewMemorialJournalEntryPage> {
+  MemorialJournalEntry? _entry; // To store the fetched entry details
+  String? _debitAccountName;
+  String? _creditAccountName;
+
+  bool _isLoadingData = true; // Overall loading state for entry and accounts
+  String? _fetchError;
+
+  // Static cache for account list to avoid repeated full fetches
+  static List<Account> _allAccountsCache = [];
+  static bool _accountsCachePopulated = false;
+  static bool _isFetchingAccountsGlobal =
+      false; // Prevent concurrent global fetches
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchEntryAndAccountDetails();
+  }
+
+  Future<void> _fetchAllAccountsIfNeeded() async {
+    // Prevent re-fetching if already populated or another instance is fetching
+    if (_accountsCachePopulated || _isFetchingAccountsGlobal) return;
+
+    _isFetchingAccountsGlobal = true; // Mark that a fetch is in progress
+
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Auth token missing for accounts fetch.');
+
+      final url = Uri.parse('$baseUrl/api/API/getddAccount');
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(Duration(seconds: 20));
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        _allAccountsCache =
+            data.map((jsonItem) => Account.fromJson(jsonItem)).toList();
+        _accountsCachePopulated = true;
+      } else {
+        throw Exception(
+          'Failed to load account list. Status: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      print("Error fetching global account list: $e");
+      // Don't set page-level error here, allow main data fetch to proceed
+      // Individual account name lookups will then fail gracefully
+    } finally {
+      _isFetchingAccountsGlobal = false; // Mark fetch as complete
+    }
+  }
+
+  Future<void> _fetchEntryAndAccountDetails() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingData = true;
+      _fetchError = null;
+    });
+
+    try {
+      // 1. Fetch all accounts if not already cached
+      await _fetchAllAccountsIfNeeded();
+      if (!mounted) return; // Check after await
+
+      // 2. Fetch Specific Journal Entry Details
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Authentication required.');
+
+      // Use POST as per your cURL example, with ID in query params
+      final url = Uri.parse('$baseUrl/api/API/ViewJM?id=${widget.entryId}');
+      final headers = {
+        // 'Content-Type': 'application/json; charset=UTF-8', // POST usually has body, GET for view with query param might not need it.
+        'Authorization': 'Bearer $token',
+      };
+      print("Fetching Journal Detail: $url");
+
+      // Your cURL used POST, so we use POST here.
+      // If your API for ViewJM is actually a GET, change http.post to http.get
+      // and remove the empty body.
+      final response = await http
+          .post(
+            url,
+            headers:
+                headers /*, body: json.encode({}) // Empty body if POST needs one */,
+          )
+          .timeout(Duration(seconds: 30));
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        // The API returns a single JSON object, not a list
+        final Map<String, dynamic> data = json.decode(
+          utf8.decode(response.bodyBytes),
+        );
+        final fetchedEntry = MemorialJournalEntry.fromJson(data);
+
+        // 3. Get Account Names from Cache
+        String? debitName = "Acc: ${fetchedEntry.akunDebit}"; // Default
+        String? creditName = "Acc: ${fetchedEntry.akunCredit}"; // Default
+
+        if (_accountsCachePopulated) {
+          final debitAcc = _allAccountsCache.firstWhere(
+            (acc) => acc.accountNo == fetchedEntry.akunDebit,
+            orElse:
+                () => Account(
+                  accountNo: fetchedEntry.akunDebit,
+                  accountName: '(Unknown)',
+                ),
+          );
+          debitName = '${debitAcc.accountName}';
+
+          final creditAcc = _allAccountsCache.firstWhere(
+            (acc) => acc.accountNo == fetchedEntry.akunCredit,
+            orElse:
+                () => Account(
+                  accountNo: fetchedEntry.akunCredit,
+                  accountName: '(Unknown)',
+                ),
+          );
+          creditName = '${creditAcc.accountName}';
+        }
+
+        if (mounted) {
+          setState(() {
+            _entry = fetchedEntry;
+            _debitAccountName = debitName;
+            _creditAccountName = creditName;
+            _isLoadingData = false;
+          });
+        }
+      } else {
+        throw Exception(
+          'Failed to load journal entry details. Status: ${response.statusCode}\nBody: ${response.body}',
+        );
+      }
+    } catch (e) {
+      print("Error fetching entry details: $e");
+      if (mounted) {
+        setState(() {
+          _fetchError = e.toString();
+          _isLoadingData = false;
+        });
+      }
+    }
+  }
+
+  Widget _buildDetailRow(String label, String? value, {bool isAmount = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              '$label:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              value ?? 'N/A',
+              style: TextStyle(fontSize: 16),
+              textAlign: isAmount ? TextAlign.right : TextAlign.left,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDisplayDate(String? dateString) {
+    if (dateString == null || dateString.isEmpty) return 'N/A';
+    try {
+      if (dateString.startsWith("0001-01-01")) return 'N/A (Default Date)';
+      DateTime parsedDate = DateTime.parse(dateString);
+      return DateFormat('dd MMM yyyy, HH:mm').format(parsedDate);
+    } catch (e) {
+      print("Error parsing date '$dateString': $e");
+      return 'Invalid Date';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoadingData) {
+      return Scaffold(
+        appBar: AppBar(title: Text('Loading Journal...')),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_fetchError != null || _entry == null) {
+      return Scaffold(
+        appBar: AppBar(title: Text('Error')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              'Error loading details: ${_fetchError ?? "Entry not found."}',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Entry is not null here
+    final entry = _entry!;
+    final String debitAmount = entry.formattedDebit; // Uses debitStr from model
+    final String creditAmount =
+        entry.formattedCredit; // Uses creditStr from model
+
+    return Scaffold(
+      appBar: AppBar(title: Text('Journal Detail: ${entry.transNo}')),
+      body: RefreshIndicator(
+        // Allow pull-to-refresh
+        onRefresh: _fetchEntryAndAccountDetails,
+        child: SingleChildScrollView(
+          physics:
+              AlwaysScrollableScrollPhysics(), // Ensure scroll even if content fits
+          padding: const EdgeInsets.all(16.0),
+          child: Card(
+            elevation: 2.0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8.0),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Center(
+                    child: Text(
+                      'Entry Details',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Divider(height: 30, thickness: 1),
+                  _buildDetailRow('Transaction No', entry.transNo),
+                  _buildDetailRow('Transaction Date', entry.formattedDate),
+                  _buildDetailRow('Description', entry.description),
+                  Divider(height: 20),
+                  _buildDetailRow(
+                    'Debit Account',
+                    _debitAccountName ?? entry.akunDebit.toString(),
+                  ),
+                  _buildDetailRow('Debit Amount', debitAmount, isAmount: true),
+                  SizedBox(height: 10),
+                  _buildDetailRow(
+                    'Credit Account',
+                    _creditAccountName ?? entry.akunCredit.toString(),
+                  ),
+                  _buildDetailRow(
+                    'Credit Amount',
+                    creditAmount,
+                    isAmount: true,
+                  ),
+                  Divider(height: 30, thickness: 1),
+                  _buildDetailRow('Entry User', entry.entryUser),
+                  _buildDetailRow(
+                    'Entry Date',
+                    _formatDisplayDate(entry.entryDate),
+                  ),
+                  SizedBox(height: 5),
+                  _buildDetailRow('Last Update User', entry.updateUser),
+                  _buildDetailRow(
+                    'Last Update Date',
+                    _formatDisplayDate(entry.updateDate),
+                  ),
+                  _buildDetailRow('Flag Aktif', entry.flagAktif),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+// ================================================================
+// END OF VIEW MEMORIAL JOURNAL ENTRY PAGE
 // ================================================================
