@@ -480,6 +480,72 @@ class MemorialJournalDetail {
           : 'N/A';
 }
 
+// --- Data Model for Account Settings List/Grid View ---
+class AccountSettingEntry {
+  final int id;
+  final String? companyId;
+  final int accountNo;
+  final String? hierarchy;
+  final String accountName;
+  final String? akunDK; // Debit/Kredit normal balance
+  final String? akunNRLR; // Neraca/LabaRugi (Balance Sheet/Income Statement)
+  final String? accountType; // Could be more specific if values are known
+  final String? entryUser;
+  final String? updateUser;
+  final String? flagAktif; // '1' for active, '0' for inactive
+  final DateTime? updateDate;
+  final DateTime? entryDate;
+
+  AccountSettingEntry({
+    required this.id,
+    this.companyId,
+    required this.accountNo,
+    this.hierarchy,
+    required this.accountName,
+    this.akunDK,
+    this.akunNRLR,
+    this.accountType,
+    this.entryUser,
+    this.updateUser,
+    this.flagAktif,
+    this.updateDate,
+    this.entryDate,
+  });
+
+  factory AccountSettingEntry.fromJson(Map<String, dynamic> json) {
+    return AccountSettingEntry(
+      id: json['id'] ?? 0,
+      companyId: json['company_id'],
+      accountNo: json['account_no'] ?? 0,
+      hierarchy: json['hierarchy'],
+      accountName: json['account_name'] ?? 'Unknown Account',
+      akunDK: json['akundk'],
+      akunNRLR: json['akunnrlr'],
+      accountType: json['account_Type'], // Key from JSON
+      entryUser: json['entry_user'],
+      updateUser: json['update_user'],
+      flagAktif: json['flag_aktif'],
+      updateDate:
+          json['update_date'] != null
+              ? DateTime.tryParse(json['update_date'])
+              : null,
+      entryDate:
+          json['entry_date'] != null
+              ? DateTime.tryParse(json['entry_date'])
+              : null,
+    );
+  }
+
+  String get formattedUpdateDate =>
+      updateDate != null
+          ? DateFormat('dd MMM yyyy').format(updateDate!)
+          : 'N/A';
+  String get formattedEntryDate =>
+      entryDate != null ? DateFormat('dd MMM yyyy').format(entryDate!) : 'N/A';
+  String get status =>
+      flagAktif == '1' ? 'Active' : (flagAktif == '0' ? 'Inactive' : 'N/A');
+}
+
 // --- Data Model for DETAILED Purchase Journal Entry View ---
 class PurchaseJournalDetail {
   final int id;
@@ -5145,12 +5211,52 @@ class _CashflowFilterPageState extends State<CashflowFilterPage> {
 // END OF DOWNLOAD REPORT PAGE & FILTER PAGES
 // ================================================================
 
+// --- Admin Menu Page (with Navigation to Account Settings) ---
 class AdminMenuPage extends StatelessWidget {
+  void _navigate(BuildContext context, Widget page) {
+    Navigator.push(context, MaterialPageRoute(builder: (context) => page));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Admin Menu')),
-      body: Center(child: Text('Admin Menu Page - Implement Here')),
+      body: ListView(
+        // Using ListView for a cleaner menu
+        padding: EdgeInsets.all(16.0),
+        children: <Widget>[
+          ListTile(
+            leading: Icon(
+              Icons.manage_accounts,
+              color: Theme.of(context).primaryColor,
+            ),
+            title: Text('Account Settings', style: TextStyle(fontSize: 18)),
+            trailing: Icon(Icons.chevron_right),
+            onTap: () {
+              _navigate(context, AccountSettingsPage()); // Navigate here
+            },
+          ),
+          Divider(),
+          ListTile(
+            leading: Icon(
+              Icons.people_alt_outlined,
+              color: Theme.of(context).primaryColor,
+            ),
+            title: Text('User Settings', style: TextStyle(fontSize: 18)),
+            trailing: Icon(Icons.chevron_right),
+            onTap: () {
+              // TODO: Navigate to UserSettingsPage when created
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('User Settings page not yet implemented.'),
+                ),
+              );
+            },
+          ),
+          Divider(),
+          // Add more admin options here
+        ],
+      ),
     );
   }
 }
@@ -6382,4 +6488,1247 @@ class _ViewSalesJournalEntryPageState extends State<ViewSalesJournalEntryPage> {
 }
 // ================================================================
 // END OF VIEW SALES JOURNAL ENTRY PAGE
+// ================================================================
+
+// ================================================================
+// ACCOUNT SETTINGS PAGE
+// ================================================================
+
+// --- Placeholder Pages for Add/Edit/View Account Settings ---
+// ================================================================
+// ADD ACCOUNT SETTING PAGE
+// ================================================================
+class AddAccountSettingPage extends StatefulWidget {
+  @override
+  _AddAccountSettingPageState createState() => _AddAccountSettingPageState();
+}
+
+class _AddAccountSettingPageState extends State<AddAccountSettingPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _accountNoController = TextEditingController();
+  final _accountNameController = TextEditingController();
+
+  // Dropdown values
+  String? _selectedHierarchy; // Can be "HDR" or "DTL"
+  String? _selectedAkunDK; // Can be "D" or "K"
+  String? _selectedAkunNRLR; // Can be "NR" or "LR"
+
+  bool _isSubmitting = false;
+  String? _submitError;
+
+  // Define dropdown items - consider making these constants or enums for better type safety
+  final List<String> _hierarchyOptions = ['hdr', 'dtl'];
+  final List<String> _akunDKOptions = ['D', 'K'];
+  final List<String> _akunNRLROptions = ['NR', 'LR'];
+
+  @override
+  void dispose() {
+    _accountNoController.dispose();
+    _accountNameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitNewAccount() async {
+    if (!_formKey.currentState!.validate()) {
+      return; // Don't submit if validation fails
+    }
+    // Additional checks for dropdowns
+    if (_selectedHierarchy == null ||
+        _selectedAkunDK == null ||
+        _selectedAkunNRLR == null) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Please select all dropdown values.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
+
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Authentication required.');
+
+      // --- Prepare data for API ---
+      final int? accountNo = int.tryParse(_accountNoController.text);
+      if (accountNo == null) throw Exception('Invalid Account Number.');
+
+      final body = json.encode({
+        "account_no": accountNo,
+        "hierarchy": _selectedHierarchy,
+        "account_name": _accountNameController.text.trim(),
+        "akundk": _selectedAkunDK,
+        "akunnrlr": _selectedAkunNRLR,
+        // Add other default fields if your API requires them for new accounts
+        // e.g., "company_id": "YOUR_DEFAULT_COMPANY_ID_IF_NEEDED",
+        // "flag_aktif": "1", // Default to active
+      });
+
+      // --- REPLACE WITH YOUR ACTUAL "ADD ACCOUNT" API ENDPOINT ---
+      final url = Uri.parse(
+        '$baseUrl/api/API/CreateAccount',
+      ); // Example endpoint
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+
+      print("Submitting New Account: $body");
+      final response = await http
+          .post(url, headers: headers, body: body)
+          .timeout(Duration(seconds: 30));
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        // 201 Created
+        print("Add Account Success: ${response.body}");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Account added successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(
+          context,
+          true,
+        ); // Pop and signal success to refresh previous page
+      } else {
+        String serverMessage = response.reasonPhrase ?? 'Submission Failed';
+        try {
+          var errorData = json.decode(response.body);
+          serverMessage =
+              errorData['message'] ??
+              errorData['title'] ??
+              errorData['error'] ??
+              serverMessage;
+        } catch (_) {
+          /* Ignore */
+        }
+        print("Add Account Failed Body: ${response.body}");
+        throw Exception(
+          'Failed to add account. Server Response: ${response.statusCode} - $serverMessage',
+        );
+      }
+    } on TimeoutException {
+      _submitError = "Submission request timed out.";
+    } on http.ClientException catch (e) {
+      _submitError = "Network error during submission: ${e.message}.";
+    } catch (e) {
+      print("Error submitting new account: $e");
+      _submitError = "An error occurred: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Add New Account')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              // --- Account Number Input ---
+              TextFormField(
+                controller: _accountNoController,
+                decoration: InputDecoration(
+                  labelText: 'Account Number*',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter account number (e.g., 1100001)',
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter an account number.';
+                  }
+                  if (int.tryParse(value.trim()) == null) {
+                    return 'Please enter a valid number.';
+                  }
+                  // Add more specific validation if needed (e.g., length, range)
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+
+              // --- Account Name Input ---
+              TextFormField(
+                controller: _accountNameController,
+                decoration: InputDecoration(
+                  labelText: 'Account Name*',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter account name',
+                ),
+                textCapitalization: TextCapitalization.words,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter an account name.';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+
+              // --- Hierarchy Dropdown ---
+              DropdownButtonFormField<String>(
+                value: _selectedHierarchy,
+                decoration: InputDecoration(
+                  labelText: 'Hierarchy*',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12.0,
+                    vertical: 16.0,
+                  ),
+                ),
+                hint: Text('Select Hierarchy (HDR/DTL)'),
+                isExpanded: true,
+                items:
+                    _hierarchyOptions.map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value),
+                      );
+                    }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedHierarchy = newValue;
+                  });
+                },
+                validator:
+                    (value) =>
+                        value == null ? 'Please select hierarchy.' : null,
+              ),
+              SizedBox(height: 16),
+
+              // --- Akun D/K Dropdown ---
+              DropdownButtonFormField<String>(
+                value: _selectedAkunDK,
+                decoration: InputDecoration(
+                  labelText: 'Normal Balance (D/K)*',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12.0,
+                    vertical: 16.0,
+                  ),
+                ),
+                hint: Text('Select D or K'),
+                isExpanded: true,
+                items:
+                    _akunDKOptions.map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value == 'D' ? 'D - Debit' : 'K - Kredit'),
+                      );
+                    }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedAkunDK = newValue;
+                  });
+                },
+                validator:
+                    (value) => value == null ? 'Please select D or K.' : null,
+              ),
+              SizedBox(height: 16),
+
+              // --- Akun NR/LR Dropdown ---
+              DropdownButtonFormField<String>(
+                value: _selectedAkunNRLR,
+                decoration: InputDecoration(
+                  labelText: 'Account Type (NR/LR)*',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12.0,
+                    vertical: 16.0,
+                  ),
+                ),
+                hint: Text('Select NR or LR'),
+                isExpanded: true,
+                items:
+                    _akunNRLROptions.map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(
+                          value == 'NR'
+                              ? 'NR - Neraca (Balance Sheet)'
+                              : 'LR - Laba Rugi (Income St.)',
+                        ),
+                      );
+                    }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedAkunNRLR = newValue;
+                  });
+                },
+                validator:
+                    (value) => value == null ? 'Please select NR or LR.' : null,
+              ),
+              SizedBox(height: 30),
+
+              // --- Submission Error Message ---
+              if (_submitError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Text(
+                    _submitError!,
+                    style: TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+
+              // --- Submit Button ---
+              _isSubmitting
+                  ? Center(child: CircularProgressIndicator())
+                  : ElevatedButton.icon(
+                    icon: Icon(Icons.add_circle_outline),
+                    label: Text('Add Account'),
+                    onPressed: _submitNewAccount,
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 15),
+                      textStyle: TextStyle(fontSize: 16),
+                    ),
+                  ),
+              SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+// ================================================================
+// END OF ADD ACCOUNT SETTING PAGE
+// ================================================================
+
+// ================================================================
+// EDIT ACCOUNT SETTING PAGE
+// ================================================================
+class EditAccountSettingPage extends StatefulWidget {
+  final AccountSettingEntry account; // Account to be edited
+
+  const EditAccountSettingPage({Key? key, required this.account})
+    : super(key: key);
+
+  @override
+  _EditAccountSettingPageState createState() => _EditAccountSettingPageState();
+}
+
+class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _accountNoController;
+  late TextEditingController _accountNameController;
+
+  // Dropdown values
+  String? _selectedHierarchy;
+  String? _selectedAkunDK;
+  String? _selectedAkunNRLR;
+  String? _selectedFlagAktif; // For active/inactive status
+
+  bool _isSubmitting = false;
+  String? _submitError;
+
+  final List<String> _hierarchyOptions = ['HDR', 'DTL'];
+  final List<String> _akunDKOptions = ['D', 'K'];
+  final List<String> _akunNRLROptions = ['NR', 'LR'];
+  final List<Map<String, String>> _statusOptions = [
+    // For flag_aktif
+    {'value': '1', 'display': 'Active'},
+    {'value': '0', 'display': 'Inactive'},
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize controllers and dropdowns with existing account data
+    _accountNoController = TextEditingController(
+      text: widget.account.accountNo.toString(),
+    );
+    _accountNameController = TextEditingController(
+      text: widget.account.accountName,
+    );
+    _selectedHierarchy = widget.account.hierarchy;
+    _selectedAkunDK = widget.account.akunDK;
+    _selectedAkunNRLR = widget.account.akunNRLR;
+    _selectedFlagAktif = widget.account.flagAktif;
+
+    // Ensure selected values are part of the options
+    if (!_hierarchyOptions.contains(_selectedHierarchy))
+      _selectedHierarchy = null;
+    if (!_akunDKOptions.contains(_selectedAkunDK)) _selectedAkunDK = null;
+    if (!_akunNRLROptions.contains(_selectedAkunNRLR)) _selectedAkunNRLR = null;
+    if (_statusOptions.indexWhere(
+          (opt) => opt['value'] == _selectedFlagAktif,
+        ) ==
+        -1)
+      _selectedFlagAktif = null;
+  }
+
+  @override
+  void dispose() {
+    _accountNoController.dispose();
+    _accountNameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _updateAccount() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedHierarchy == null ||
+        _selectedAkunDK == null ||
+        _selectedAkunNRLR == null ||
+        _selectedFlagAktif == null) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Please select all dropdown values.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
+
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Authentication required.');
+
+      final int? accountNo = int.tryParse(_accountNoController.text);
+      if (accountNo == null) throw Exception('Invalid Account Number.');
+
+      final body = json.encode({
+        "id": widget.account.id, // Include the ID for update
+        "account_no": accountNo,
+        "hierarchy": _selectedHierarchy,
+        "account_name": _accountNameController.text.trim(),
+        "akundk": _selectedAkunDK,
+        "akunnrlr": _selectedAkunNRLR,
+        "flag_aktif": _selectedFlagAktif,
+        "company_id":
+            widget
+                .account
+                .companyId, // Send back company_id if needed for update
+        // "entry_user": widget.account.entryUser, // Usually not updated
+        // "entry_date": widget.account.entryDate?.toIso8601String(), // Usually not updated
+        // "update_user": "CURRENT_LOGGED_IN_USER", // API should handle this or pass if required
+      });
+
+      // --- REPLACE WITH YOUR ACTUAL "UPDATE ACCOUNT" API ENDPOINT ---
+      // It might be a PUT request or POST, often includes ID in path or body
+      final url = Uri.parse(
+        '$baseUrl/api/Admin/UpdateAccount/${widget.account.id}',
+      ); // Example: PUT /api/Admin/UpdateAccount/{id}
+      // OR: final url = Uri.parse('$baseUrl/api/Admin/UpdateAccount'); // If ID is only in body
+
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+      print("Updating Account ${widget.account.id}: $body");
+
+      // Use http.put or http.post based on your API design
+      final response = await http
+          .put(url, headers: headers, body: body)
+          .timeout(Duration(seconds: 30));
+      // final response = await http.post(url, headers: headers, body: body).timeout(Duration(seconds: 30));
+
+      if (!mounted) return;
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        // 204 No Content for successful PUT
+        print("Update Account Success: ${response.body}");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Account updated successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(
+          context,
+          true,
+        ); // Pop and signal success to refresh previous page
+      } else {
+        String serverMessage = response.reasonPhrase ?? 'Update Failed';
+        try {
+          var errorData = json.decode(response.body);
+          serverMessage =
+              errorData['message'] ??
+              errorData['title'] ??
+              errorData['error'] ??
+              serverMessage;
+        } catch (_) {
+          /* Ignore */
+        }
+        print("Update Account Failed Body: ${response.body}");
+        throw Exception(
+          'Failed to update account. Server Response: ${response.statusCode} - $serverMessage',
+        );
+      }
+    } on TimeoutException {
+      _submitError = "Update request timed out.";
+    } on http.ClientException catch (e) {
+      _submitError = "Network error during update: ${e.message}.";
+    } catch (e) {
+      print("Error updating account: $e");
+      _submitError = "An error occurred: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Edit Account: ${widget.account.accountNo}')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              // --- Account Number (Potentially Read-only or validated for uniqueness if changed) ---
+              TextFormField(
+                controller: _accountNoController,
+                decoration: InputDecoration(
+                  labelText: 'Account Number*',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                // readOnly: true, // Consider if account_no should be editable. If so, API needs to handle potential conflicts.
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty)
+                    return 'Please enter an account number.';
+                  if (int.tryParse(value.trim()) == null)
+                    return 'Please enter a valid number.';
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+
+              // --- Account Name Input ---
+              TextFormField(
+                controller: _accountNameController,
+                decoration: InputDecoration(
+                  labelText: 'Account Name*',
+                  border: OutlineInputBorder(),
+                ),
+                textCapitalization: TextCapitalization.words,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty)
+                    return 'Please enter an account name.';
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+
+              // --- Hierarchy Dropdown ---
+              DropdownButtonFormField<String>(
+                value: _selectedHierarchy,
+                decoration: InputDecoration(
+                  labelText: 'Hierarchy*',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12.0,
+                    vertical: 16.0,
+                  ),
+                ),
+                hint: Text('Select Hierarchy (HDR/DTL)'),
+                isExpanded: true,
+                items:
+                    _hierarchyOptions.map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value),
+                      );
+                    }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedHierarchy = newValue;
+                  });
+                },
+                validator:
+                    (value) =>
+                        value == null ? 'Please select hierarchy.' : null,
+              ),
+              SizedBox(height: 16),
+
+              // --- Akun D/K Dropdown ---
+              DropdownButtonFormField<String>(
+                value: _selectedAkunDK,
+                decoration: InputDecoration(
+                  labelText: 'Normal Balance (D/K)*',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12.0,
+                    vertical: 16.0,
+                  ),
+                ),
+                hint: Text('Select D or K'),
+                isExpanded: true,
+                items:
+                    _akunDKOptions.map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value == 'D' ? 'D - Debit' : 'K - Kredit'),
+                      );
+                    }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedAkunDK = newValue;
+                  });
+                },
+                validator:
+                    (value) => value == null ? 'Please select D or K.' : null,
+              ),
+              SizedBox(height: 16),
+
+              // --- Akun NR/LR Dropdown ---
+              DropdownButtonFormField<String>(
+                value: _selectedAkunNRLR,
+                decoration: InputDecoration(
+                  labelText: 'Account Type (NR/LR)*',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12.0,
+                    vertical: 16.0,
+                  ),
+                ),
+                hint: Text('Select NR or LR'),
+                isExpanded: true,
+                items:
+                    _akunNRLROptions.map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(
+                          value == 'NR'
+                              ? 'NR - Neraca (Balance Sheet)'
+                              : 'LR - Laba Rugi (Income St.)',
+                        ),
+                      );
+                    }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedAkunNRLR = newValue;
+                  });
+                },
+                validator:
+                    (value) => value == null ? 'Please select NR or LR.' : null,
+              ),
+              SizedBox(height: 16),
+
+              // --- Flag Aktif Dropdown ---
+              DropdownButtonFormField<String>(
+                value: _selectedFlagAktif,
+                decoration: InputDecoration(
+                  labelText: 'Status*',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12.0,
+                    vertical: 16.0,
+                  ),
+                ),
+                hint: Text('Select Status'),
+                isExpanded: true,
+                items:
+                    _statusOptions.map((Map<String, String> option) {
+                      return DropdownMenuItem<String>(
+                        value: option['value'],
+                        child: Text(option['display']!),
+                      );
+                    }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedFlagAktif = newValue;
+                  });
+                },
+                validator:
+                    (value) => value == null ? 'Please select a status.' : null,
+              ),
+              SizedBox(height: 30),
+
+              if (_submitError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Text(
+                    _submitError!,
+                    style: TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              _isSubmitting
+                  ? Center(child: CircularProgressIndicator())
+                  : ElevatedButton.icon(
+                    icon: Icon(Icons.save_alt),
+                    label: Text('Update Account'),
+                    onPressed: _updateAccount,
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 15),
+                      textStyle: TextStyle(fontSize: 16),
+                    ),
+                  ),
+              SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+// ================================================================
+// END OF EDIT ACCOUNT SETTING PAGE
+// ================================================================
+
+class ViewAccountSettingPage extends StatelessWidget {
+  // For viewing details (optional, could be combined with edit)
+  final AccountSettingEntry account;
+  const ViewAccountSettingPage({Key? key, required this.account})
+    : super(key: key);
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('View Account: ${account.accountNo}')),
+      body: Center(child: Text('Details for Account ID: ${account.id}')),
+    );
+  }
+}
+// ------------------------------------------------------------
+
+class AccountSettingsPage extends StatefulWidget {
+  @override
+  _AccountSettingsPageState createState() => _AccountSettingsPageState();
+}
+
+class _AccountSettingsPageState extends State<AccountSettingsPage> {
+  List<AccountSettingEntry> _allAccounts = [];
+  List<AccountSettingEntry> _filteredAccounts = [];
+  bool _isLoading = true;
+  bool _isFetchingMore = false;
+  String? _error;
+  int _currentPage = 1;
+  final int _pageSize = 15; // Adjust as needed
+  bool _hasMoreData = true;
+
+  // --- Filter State ---
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
+
+  // Sorting State
+  int _sortColumnIndex = 1; // Default sort by Account No
+  bool _sortAscending = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAccounts(isInitialLoad: true);
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  // --- Debounced Search ---
+  _onSearchChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 700), () {
+      // When applying filter, always reset to page 1 for new search results
+      _fetchAccounts(
+        isInitialLoad: true,
+        searchQuery: _searchController.text.trim(),
+      );
+    });
+  }
+
+  Future<void> _fetchAccounts({
+    bool isInitialLoad = false,
+    String? searchQuery,
+  }) async {
+    if (_isFetchingMore || (!isInitialLoad && !_hasMoreData)) return;
+    if (!mounted) return;
+
+    setState(() {
+      if (isInitialLoad) {
+        _isLoading = true;
+        _currentPage = 1;
+        _allAccounts.clear();
+        _filteredAccounts.clear(); // Clear this too
+        _hasMoreData = true;
+      } else {
+        _isFetchingMore = true;
+      }
+      _error = null;
+    });
+
+    int pageToFetch = isInitialLoad ? 1 : _currentPage + 1;
+    String currentSearchQuery = searchQuery ?? _searchController.text.trim();
+
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('auth_token');
+      if (token == null || token.isEmpty)
+        throw Exception('Authentication required.');
+
+      // --- ADJUST API ENDPOINT for Account Settings List ---
+      // Example: /api/Admin/GetAccounts or /api/ChartOfAccounts/List
+      // Ensure it supports pagination and search query parameters
+      var queryParams = {
+        'page': pageToFetch.toString(),
+        'pageSize': _pageSize.toString(),
+        if (currentSearchQuery.isNotEmpty) 'search': currentSearchQuery,
+        // Add sort parameters if API supports it
+        // 'sortBy': _getSortColumnName(),
+        // 'sortDir': _sortAscending ? 'asc' : 'desc',
+      };
+      queryParams.removeWhere((key, value) => value == null || value.isEmpty);
+
+      final url = Uri.parse(
+        '$baseUrl/api/API/getdataaccount',
+      ) // **<-- REPLACE WITH YOUR ACTUAL ACCOUNTS API ENDPOINT**
+      .replace(queryParameters: queryParams);
+      final headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      };
+
+      print("Fetching Accounts: $url");
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(Duration(seconds: 45));
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        final List<AccountSettingEntry> newEntries =
+            data
+                .map((jsonItem) => AccountSettingEntry.fromJson(jsonItem))
+                .toList();
+
+        if (newEntries.length < _pageSize) {
+          _hasMoreData = false;
+        }
+
+        if (isInitialLoad) {
+          _allAccounts = newEntries;
+        } else {
+          _allAccounts.addAll(newEntries);
+        }
+        _currentPage = pageToFetch;
+        _applyClientSideFilterAndSort(); // Apply client-side sort, filter is now server-side via API
+      } else {
+        throw Exception(
+          'Failed to load accounts. Status: ${response.statusCode}\nBody: ${response.body}',
+        );
+      }
+    } on TimeoutException catch (e) {
+      _error = e.message ?? "Request timed out.";
+    } on http.ClientException catch (e) {
+      _error = "Network error: ${e.message}.";
+    } catch (e) {
+      print("Error fetching accounts (Page $pageToFetch): $e");
+      _error = "An unexpected error: ${e.toString()}";
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isFetchingMore = false;
+        });
+      }
+    }
+  }
+
+  // Apply client-side sort after fetching/filtering
+  void _applyClientSideFilterAndSort() {
+    if (!mounted) return;
+    setState(() {
+      _filteredAccounts = List.from(
+        _allAccounts,
+      ); // Start with all current data
+      // Client-side filtering (if needed on top of server search) is removed for simplicity
+      // as server search is primary. If you want to keep it:
+      // String query = _searchController.text.toLowerCase().trim();
+      // if (query.isNotEmpty) {
+      //   _filteredAccounts = _allAccounts.where((acc) {
+      //     return acc.accountName.toLowerCase().contains(query) ||
+      //            acc.accountNo.toString().contains(query);
+      //   }).toList();
+      // } else {
+      //   _filteredAccounts = List.from(_allAccounts);
+      // }
+      _applySort();
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    if (!mounted) return;
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applySort(); // This will now sort the currently loaded page data
+    });
+  }
+
+  void _applySort() {
+    _filteredAccounts.sort((a, b) {
+      int compareResult = 0;
+      switch (_sortColumnIndex) {
+        case 0:
+          compareResult = (a.id).compareTo(b.id);
+          break; // ID
+        case 1:
+          compareResult = (a.accountNo).compareTo(b.accountNo);
+          break; // Account No
+        case 2:
+          compareResult = a.accountName.toLowerCase().compareTo(
+            b.accountName.toLowerCase(),
+          );
+          break; // Account Name (case-insensitive)
+        // Removed other cases for hierarchy, D/K, etc.
+      }
+      return _sortAscending ? compareResult : -compareResult;
+    });
+  }
+
+  // --- Action Handlers ---
+  void _viewAccount(AccountSettingEntry account) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ViewAccountSettingPage(account: account),
+      ),
+    );
+  }
+
+  void _editAccount(AccountSettingEntry account) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditAccountSettingPage(account: account),
+      ),
+    );
+    if (result == true && mounted) {
+      // If edit page indicates success
+      _fetchAccounts(
+        isInitialLoad: true,
+        searchQuery: _searchController.text.trim(),
+      ); // Refresh list
+    }
+  }
+
+  void _deleteAccount(AccountSettingEntry account) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (BuildContext context) => AlertDialog(
+            title: Text('Confirm Delete'),
+            content: Text(
+              'Are you sure you want to delete account "${account.accountName}" (${account.accountNo})?',
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text('Delete', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+    );
+
+    if (confirm == true) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = true;
+      }); // Show loading during delete
+      try {
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        String? token = prefs.getString('auth_token');
+        if (token == null || token.isEmpty)
+          throw Exception('Authentication required.');
+
+        // --- ADJUST API ENDPOINT for Deleting an Account ---
+        final url = Uri.parse(
+          '$baseUrl/api/Admin/DeleteAccount/${account.id}',
+        ); // Example DELETE endpoint
+        final headers = {'Authorization': 'Bearer $token'};
+        print("Deleting Account: $url");
+
+        final response = await http
+            .delete(url, headers: headers)
+            .timeout(Duration(seconds: 30));
+
+        if (!mounted) return;
+        if (response.statusCode == 200 || response.statusCode == 204) {
+          // 204 No Content is also success
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Account deleted successfully.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _fetchAccounts(
+            isInitialLoad: true,
+            searchQuery: _searchController.text.trim(),
+          ); // Refresh list
+        } else {
+          throw Exception(
+            'Failed to delete account. Status: ${response.statusCode}\nBody: ${response.body}',
+          );
+        }
+      } catch (e) {
+        print("Error deleting account: $e");
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting account: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+      } finally {
+        if (mounted)
+          setState(() {
+            _isLoading = false;
+          });
+      }
+    }
+  }
+
+  void _navigateToAddAccountPage() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AddAccountSettingPage()),
+    );
+    if (result == true && mounted) {
+      // If add page indicates success
+      _fetchAccounts(
+        isInitialLoad: true,
+        searchQuery: _searchController.text.trim(),
+      ); // Refresh list
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Account Settings'),
+        // Optional: Add search directly in AppBar
+        // actions: [IconButton(icon: Icon(Icons.search), onPressed: (){ /* TODO: implement AppBar search */})],
+      ),
+      body: Column(
+        children: [
+          // --- Filter Input ---
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Search by Account No. or Name',
+                hintText: 'Enter search term...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                suffixIcon:
+                    _searchController.text.isNotEmpty
+                        ? IconButton(
+                          icon: Icon(Icons.clear),
+                          onPressed: () {
+                            _searchController.clear();
+                            // _onSearchChanged(); // Optionally trigger search on clear
+                          },
+                        )
+                        : null,
+              ),
+            ),
+          ),
+          // --- Main Content Area ---
+          Expanded(
+            child:
+                _isLoading &&
+                        _filteredAccounts
+                            .isEmpty // Show loading only if list is empty initially
+                    ? Center(child: CircularProgressIndicator())
+                    : _error != null
+                    ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text(
+                          'Error: $_error',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    )
+                    : _filteredAccounts.isEmpty
+                    ? Center(child: Text('No accounts found.'))
+                    : _buildDataTable(),
+          ),
+          // --- Load More Button ---
+          _buildPaginationControls(),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _navigateToAddAccountPage,
+        tooltip: 'Add New Account',
+        child: Icon(Icons.add),
+      ),
+    );
+  }
+
+  // --- UPDATED DataTable for simpler view ---
+  Widget _buildDataTable() {
+    final List<DataColumn> columns = [
+      DataColumn(
+        label: Text('ID'),
+        tooltip: 'Internal ID',
+        numeric: true,
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Acc. No'),
+        tooltip: 'Account Number',
+        numeric: true,
+        onSort: _onSort,
+      ),
+      DataColumn(
+        label: Text('Account Name'),
+        tooltip: 'Account Name/Description',
+        onSort: _onSort,
+      ), // Changed label slightly
+      DataColumn(label: Text('Actions')), // Actions column
+    ];
+
+    final List<DataRow> rows =
+        _filteredAccounts.map((account) {
+          return DataRow(
+            cells: [
+              DataCell(Text(account.id.toString())),
+              DataCell(Text(account.accountNo.toString())),
+              DataCell(
+                Text(account.accountName),
+              ), // Displaying accountName as 'Description'
+              DataCell(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.edit, size: 20, color: Colors.blue),
+                      tooltip: 'Edit',
+                      onPressed: () => _editAccount(account),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.delete, size: 20, color: Colors.red),
+                      tooltip: 'Delete',
+                      onPressed: () => _deleteAccount(account),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            // Optional: Select row to view details if you have a separate view page
+            onSelectChanged: (selected) {
+              if (selected ?? false) {
+                // If you want to view details on row tap, ensure _viewAccount is implemented
+                // and you have a ViewAccountSettingPage that can display more details.
+                _viewAccount(
+                  account,
+                ); // Or remove onSelectChanged if direct edit/delete is enough
+              }
+            },
+          );
+        }).toList();
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columns: columns,
+        rows: rows,
+        sortColumnIndex: _sortColumnIndex,
+        sortAscending: _sortAscending,
+        showCheckboxColumn:
+            true, // Set to true to enable onSelectChanged for the whole row
+        columnSpacing: 15, // Adjusted spacing
+        headingRowHeight: 40,
+        dataRowMinHeight: 48,
+        headingTextStyle: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: Colors.blueGrey[800],
+        ),
+        headingRowColor: MaterialStateProperty.resolveWith<Color?>(
+          (_) => Colors.blueGrey[50],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaginationControls() {
+    if (_isLoading || _isFetchingMore) {
+      // Show loader if main loading or fetching more
+      return Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (!_hasMoreData && _allAccounts.isEmpty) {
+      // No data at all
+      return SizedBox.shrink();
+    }
+    if (!_hasMoreData && _allAccounts.isNotEmpty) {
+      // Reached end of list
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Center(
+          child: Text("End of list", style: TextStyle(color: Colors.grey)),
+        ),
+      );
+    }
+    // Show Load More button
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16.0),
+      child: Center(
+        child: ElevatedButton(
+          onPressed:
+              () => _fetchAccounts(
+                searchQuery: _searchController.text.trim(),
+              ), // Pass current search query
+          child: Text('Load More'),
+        ),
+      ),
+    );
+  }
+}
+
+// ================================================================
+// END OF ACCOUNT SETTINGS PAGE
 // ================================================================
