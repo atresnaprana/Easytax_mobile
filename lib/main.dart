@@ -7224,72 +7224,78 @@ class AccountSettingsPage extends StatefulWidget {
 }
 
 class _AccountSettingsPageState extends State<AccountSettingsPage> {
-  List<AccountSettingEntry> _allAccounts = [];
-  List<AccountSettingEntry> _filteredAccounts = [];
-  bool _isLoading = true;
-  bool _isFetchingMore = false;
-  String? _error;
-  int _currentPage = 1;
-  final int _pageSize = 15; // Adjust as needed
-  bool _hasMoreData = true;
+  List<AccountSettingEntry> _allFetchedAccounts = []; // MASTER LIST from API
+  List<AccountSettingEntry> _displayedAccounts =
+      []; // UI LIST (subset of master)
 
-  // --- Filter State ---
+  bool _isLoadingApi = false; // True when fetching ALL data from API
+  String? _error;
+
+  // Client-side pagination state
+  int _currentlyDisplayedItemsCount = 0;
+  final int _pageSizeClient = 15; // How many items to show per "page" on client
+  bool _canLoadMoreClient = false;
+
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
+  String _activeSearchQuery = '';
 
-  // Sorting State
-  int _sortColumnIndex = 1; // Default sort by Account No
+  int _sortColumnIndex = 1;
   bool _sortAscending = true;
 
   @override
   void initState() {
     super.initState();
-    _fetchAccounts(isInitialLoad: true);
-    _searchController.addListener(_onSearchChanged);
+    print("ACC_SETTINGS_CLIENT_SIDE: initState");
+    _fetchDataFromApiAndInitializeDisplay(); // Initial fetch of ALL data
+    _searchController.addListener(_onSearchChangedWithDebounce);
   }
 
   @override
   void dispose() {
-    _searchController.removeListener(_onSearchChanged);
+    _searchController.removeListener(_onSearchChangedWithDebounce);
     _searchController.dispose();
     _debounce?.cancel();
     super.dispose();
   }
 
-  // --- Debounced Search ---
-  _onSearchChanged() {
+  void _onSearchChangedWithDebounce() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 700), () {
-      // When applying filter, always reset to page 1 for new search results
-      _fetchAccounts(
-        isInitialLoad: true,
-        searchQuery: _searchController.text.trim(),
+      if (!mounted) return;
+      final newSearchQuery = _searchController.text.trim();
+      print(
+        "ACC_SETTINGS_CLIENT_SIDE: Debounce. Current: '$_activeSearchQuery', New: '$newSearchQuery'",
       );
+      if (_activeSearchQuery != newSearchQuery) {
+        _activeSearchQuery = newSearchQuery;
+        _fetchDataFromApiAndInitializeDisplay(); // New search re-fetches ALL data
+      }
     });
   }
 
-  Future<void> _fetchAccounts({
-    bool isInitialLoad = false,
-    String? searchQuery,
-  }) async {
-    if (_isFetchingMore || (!isInitialLoad && !_hasMoreData)) return;
-    if (!mounted) return;
+  // Fetches ALL data from the API based on search query (no server-side page parameter)
+  Future<void> _fetchDataFromApiAndInitializeDisplay() async {
+    if (!mounted) {
+      print("ACC_SETTINGS_CLIENT_SIDE: _fetchData - NOT MOUNTED");
+      return;
+    }
+    if (_isLoadingApi) {
+      print("ACC_SETTINGS_CLIENT_SIDE: _fetchData - ALREADY LOADING API");
+      return;
+    }
 
+    print(
+      "ACC_SETTINGS_CLIENT_SIDE: _fetchData - Setting _isLoadingApi=true. Search: '$_activeSearchQuery'",
+    );
     setState(() {
-      if (isInitialLoad) {
-        _isLoading = true;
-        _currentPage = 1;
-        _allAccounts.clear();
-        _filteredAccounts.clear(); // Clear this too
-        _hasMoreData = true;
-      } else {
-        _isFetchingMore = true;
-      }
+      _isLoadingApi = true;
       _error = null;
+      _allFetchedAccounts.clear();
+      _displayedAccounts.clear();
+      _currentlyDisplayedItemsCount = 0;
+      _canLoadMoreClient = false;
     });
-
-    int pageToFetch = isInitialLoad ? 1 : _currentPage + 1;
-    String currentSearchQuery = searchQuery ?? _searchController.text.trim();
 
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -7297,129 +7303,157 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       if (token == null || token.isEmpty)
         throw Exception('Authentication required.');
 
-      // --- ADJUST API ENDPOINT for Account Settings List ---
-      // Example: /api/Admin/GetAccounts or /api/ChartOfAccounts/List
-      // Ensure it supports pagination and search query parameters
       var queryParams = {
-        'page': pageToFetch.toString(),
-        'pageSize': _pageSize.toString(),
-        if (currentSearchQuery.isNotEmpty) 'search': currentSearchQuery,
-        // Add sort parameters if API supports it
-        // 'sortBy': _getSortColumnName(),
-        // 'sortDir': _sortAscending ? 'asc' : 'desc',
+        // NO 'page' or 'pageSize' here, assuming API returns all for search
+        if (_activeSearchQuery.isNotEmpty) 'search': _activeSearchQuery,
       };
-      queryParams.removeWhere((key, value) => value == null || value.isEmpty);
-
       final url = Uri.parse(
-        '$baseUrl/api/API/getdataaccount',
-      ) // **<-- REPLACE WITH YOUR ACTUAL ACCOUNTS API ENDPOINT**
-      .replace(queryParameters: queryParams);
+        '$baseUrl/api/API/getdataAccount',
+      ) // YOUR ACCOUNTS LIST API
+      .replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
       final headers = {
         'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': 'Bearer $token',
       };
 
-      print("Fetching Accounts: $url");
+      print("ACC_SETTINGS_CLIENT_SIDE: Fetching ALL API Data: $url");
       final response = await http
           .get(url, headers: headers)
           .timeout(Duration(seconds: 45));
 
-      if (!mounted) return;
+      if (!mounted) {
+        print(
+          "ACC_SETTINGS_CLIENT_SIDE: _fetchData - NOT MOUNTED after API call.",
+        );
+        return;
+      }
 
       if (response.statusCode == 200) {
+        print("ACC_SETTINGS_CLIENT_SIDE: API success (200)");
         final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
-        final List<AccountSettingEntry> newEntries =
+        // Store all fetched entries
+        _allFetchedAccounts =
             data
                 .map((jsonItem) => AccountSettingEntry.fromJson(jsonItem))
                 .toList();
+        print(
+          "ACC_SETTINGS_CLIENT_SIDE: Fetched ${_allFetchedAccounts.length} total entries.",
+        );
 
-        if (newEntries.length < _pageSize) {
-          _hasMoreData = false;
-        }
-
-        if (isInitialLoad) {
-          _allAccounts = newEntries;
-        } else {
-          _allAccounts.addAll(newEntries);
-        }
-        _currentPage = pageToFetch;
-        _applyClientSideFilterAndSort(); // Apply client-side sort, filter is now server-side via API
+        _applySortToAllFetched(); // Sort the entire fetched list once
+        _showNextClientPage(
+          isInitialLoad: true,
+        ); // Display the first "page" of data
       } else {
+        print("ACC_SETTINGS_CLIENT_SIDE: API error: ${response.statusCode}");
         throw Exception(
-          'Failed to load accounts. Status: ${response.statusCode}\nBody: ${response.body}',
+          'Failed to load accounts. Status: ${response.statusCode}',
         );
       }
-    } on TimeoutException catch (e) {
-      _error = e.message ?? "Request timed out.";
-    } on http.ClientException catch (e) {
-      _error = "Network error: ${e.message}.";
-    } catch (e) {
-      print("Error fetching accounts (Page $pageToFetch): $e");
-      _error = "An unexpected error: ${e.toString()}";
+    } catch (e, s) {
+      print("ACC_SETTINGS_CLIENT_SIDE: EXCEPTION in _fetchData: $e\n$s");
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
-          _isLoading = false;
-          _isFetchingMore = false;
+          _isLoadingApi = false;
         });
+        print(
+          "ACC_SETTINGS_CLIENT_SIDE: _fetchData - FINALLY. _isLoadingApi: $_isLoadingApi, _error: $_error",
+        );
       }
     }
   }
 
-  // Apply client-side sort after fetching/filtering
-  void _applyClientSideFilterAndSort() {
-    if (!mounted) return;
-    setState(() {
-      _filteredAccounts = List.from(
-        _allAccounts,
-      ); // Start with all current data
-      // Client-side filtering (if needed on top of server search) is removed for simplicity
-      // as server search is primary. If you want to keep it:
-      // String query = _searchController.text.toLowerCase().trim();
-      // if (query.isNotEmpty) {
-      //   _filteredAccounts = _allAccounts.where((acc) {
-      //     return acc.accountName.toLowerCase().contains(query) ||
-      //            acc.accountNo.toString().contains(query);
-      //   }).toList();
-      // } else {
-      //   _filteredAccounts = List.from(_allAccounts);
-      // }
-      _applySort();
-    });
-  }
-
-  void _onSort(int columnIndex, bool ascending) {
-    if (!mounted) return;
-    setState(() {
-      _sortColumnIndex = columnIndex;
-      _sortAscending = ascending;
-      _applySort(); // This will now sort the currently loaded page data
-    });
-  }
-
-  void _applySort() {
-    _filteredAccounts.sort((a, b) {
+  void _applySortToAllFetched() {
+    if (!mounted || _allFetchedAccounts.isEmpty) return;
+    print(
+      "ACC_SETTINGS_CLIENT_SIDE: Sorting ${_allFetchedAccounts.length} total items.",
+    );
+    _allFetchedAccounts.sort((a, b) {
+      /* ... sort logic ... */
       int compareResult = 0;
       switch (_sortColumnIndex) {
         case 0:
           compareResult = (a.id).compareTo(b.id);
-          break; // ID
+          break;
         case 1:
           compareResult = (a.accountNo).compareTo(b.accountNo);
-          break; // Account No
+          break;
         case 2:
           compareResult = a.accountName.toLowerCase().compareTo(
             b.accountName.toLowerCase(),
           );
-          break; // Account Name (case-insensitive)
-        // Removed other cases for hierarchy, D/K, etc.
+          break;
       }
       return _sortAscending ? compareResult : -compareResult;
     });
   }
 
-  // --- Action Handlers ---
+  void _onSort(int columnIndex, bool ascending) {
+    if (!mounted) return;
+    print(
+      "ACC_SETTINGS_CLIENT_SIDE: _onSort - Column: $columnIndex, Ascending: $ascending",
+    );
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applySortToAllFetched(); // Sort the master list
+      // Reset and show the first page of the newly sorted data
+      _displayedAccounts.clear();
+      _currentlyDisplayedItemsCount = 0;
+      _showNextClientPage(isInitialLoad: true);
+    });
+  }
+
+  // This function handles displaying the next "page" from _allFetchedAccounts
+  void _showNextClientPage({bool isInitialLoad = false}) {
+    if (!mounted) return;
+    print(
+      "ACC_SETTINGS_CLIENT_SIDE: _showNextClientPage. Initial: $isInitialLoad. Current displayed: $_currentlyDisplayedItemsCount / Total fetched: ${_allFetchedAccounts.length}",
+    );
+
+    if (isInitialLoad) {
+      _displayedAccounts.clear();
+      _currentlyDisplayedItemsCount = 0;
+    }
+
+    if (_currentlyDisplayedItemsCount >= _allFetchedAccounts.length) {
+      print("ACC_SETTINGS_CLIENT_SIDE: All items already displayed.");
+      setState(() {
+        _canLoadMoreClient = false;
+      });
+      return;
+    }
+
+    int end = _currentlyDisplayedItemsCount + _pageSizeClient;
+    if (end > _allFetchedAccounts.length) {
+      end = _allFetchedAccounts.length;
+    }
+
+    // Add the next chunk of data to be displayed
+    // No, we replace _displayedAccounts with the current view window
+    // _displayedAccounts.addAll(_allFetchedAccounts.sublist(_currentlyDisplayedItemsCount, end));
+
+    setState(() {
+      // _displayedAccounts is a "window" into _allFetchedAccounts
+      _displayedAccounts = _allFetchedAccounts.sublist(0, end);
+      _currentlyDisplayedItemsCount = end;
+      _canLoadMoreClient =
+          _currentlyDisplayedItemsCount < _allFetchedAccounts.length;
+      print(
+        "ACC_SETTINGS_CLIENT_SIDE: Now displaying ${_displayedAccounts.length}. Can load more: $_canLoadMoreClient",
+      );
+    });
+  }
+
+  // Action Handlers (call _fetchDataAndInitializeDisplay on success)
   void _viewAccount(AccountSettingEntry account) {
+    /* ... */
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -7429,6 +7463,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   }
 
   void _editAccount(AccountSettingEntry account) async {
+    /* ... */
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -7436,15 +7471,12 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       ),
     );
     if (result == true && mounted) {
-      // If edit page indicates success
-      _fetchAccounts(
-        isInitialLoad: true,
-        searchQuery: _searchController.text.trim(),
-      ); // Refresh list
+      _fetchDataFromApiAndInitializeDisplay();
     }
   }
 
   void _deleteAccount(AccountSettingEntry account) async {
+    /* ... delete logic, calls _fetchDataAndInitializeDisplay on success ... */
     final confirm = await showDialog<bool>(
       context: context,
       builder:
@@ -7465,42 +7497,31 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             ],
           ),
     );
-
     if (confirm == true) {
       if (!mounted) return;
       setState(() {
-        _isLoading = true;
-      }); // Show loading during delete
+        _isLoadingApi = true;
+      });
       try {
         SharedPreferences prefs = await SharedPreferences.getInstance();
         String? token = prefs.getString('auth_token');
         if (token == null || token.isEmpty)
           throw Exception('Authentication required.');
-
-        // --- ADJUST API ENDPOINT for Deleting an Account ---
-        final url = Uri.parse(
-          '$baseUrl/api/Admin/DeleteAccount/${account.id}',
-        ); // Example DELETE endpoint
+        final url = Uri.parse('$baseUrl/api/Admin/DeleteAccount/${account.id}');
         final headers = {'Authorization': 'Bearer $token'};
         print("Deleting Account: $url");
-
         final response = await http
             .delete(url, headers: headers)
             .timeout(Duration(seconds: 30));
-
         if (!mounted) return;
         if (response.statusCode == 200 || response.statusCode == 204) {
-          // 204 No Content is also success
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Account deleted successfully.'),
               backgroundColor: Colors.green,
             ),
           );
-          _fetchAccounts(
-            isInitialLoad: true,
-            searchQuery: _searchController.text.trim(),
-          ); // Refresh list
+          _fetchDataFromApiAndInitializeDisplay();
         } else {
           throw Exception(
             'Failed to delete account. Status: ${response.statusCode}\nBody: ${response.body}',
@@ -7518,39 +7539,39 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       } finally {
         if (mounted)
           setState(() {
-            _isLoading = false;
+            _isLoadingApi = false;
           });
       }
     }
   }
 
   void _navigateToAddAccountPage() async {
+    /* ... */
     final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => AddAccountSettingPage()),
     );
     if (result == true && mounted) {
-      // If add page indicates success
-      _fetchAccounts(
-        isInitialLoad: true,
-        searchQuery: _searchController.text.trim(),
-      ); // Refresh list
+      _fetchDataFromApiAndInitializeDisplay();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    print(
+      "ACC_SETTINGS_CLIENT_SIDE: build - _isLoadingApi: $_isLoadingApi, _displayedAccounts.length: ${_displayedAccounts.length}, _error: $_error",
+    );
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Account Settings'),
-        // Optional: Add search directly in AppBar
-        // actions: [IconButton(icon: Icon(Icons.search), onPressed: (){ /* TODO: implement AppBar search */})],
-      ),
+      appBar: AppBar(title: Text('Account Settings (Client)')),
       body: Column(
         children: [
-          // --- Filter Input ---
           Padding(
-            padding: const EdgeInsets.all(12.0),
+            /* ... Search TextField ... */ padding: const EdgeInsets.fromLTRB(
+              12.0,
+              12.0,
+              12.0,
+              8.0,
+            ),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
@@ -7566,36 +7587,15 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                           icon: Icon(Icons.clear),
                           onPressed: () {
                             _searchController.clear();
-                            // _onSearchChanged(); // Optionally trigger search on clear
+                            _activeSearchQuery = '';
+                            _fetchDataFromApiAndInitializeDisplay();
                           },
                         )
                         : null,
               ),
             ),
           ),
-          // --- Main Content Area ---
-          Expanded(
-            child:
-                _isLoading &&
-                        _filteredAccounts
-                            .isEmpty // Show loading only if list is empty initially
-                    ? Center(child: CircularProgressIndicator())
-                    : _error != null
-                    ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Text(
-                          'Error: $_error',
-                          style: TextStyle(color: Colors.red),
-                        ),
-                      ),
-                    )
-                    : _filteredAccounts.isEmpty
-                    ? Center(child: Text('No accounts found.'))
-                    : _buildDataTable(),
-          ),
-          // --- Load More Button ---
-          _buildPaginationControls(),
+          Expanded(child: _buildDataArea()),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -7606,8 +7606,46 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     );
   }
 
-  // --- UPDATED DataTable for simpler view ---
+  Widget _buildDataArea() {
+    print(
+      "ACC_SETTINGS_CLIENT_SIDE: _buildDataArea - _isLoadingApi: $_isLoadingApi, _displayedAccounts.length: ${_displayedAccounts.length}, _error: $_error",
+    );
+    if (_isLoadingApi && _allFetchedAccounts.isEmpty) {
+      // Show full screen loader only if completely initial fetch
+      return Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: _buildErrorWidget(_error!),
+        ),
+      );
+    }
+    if (_displayedAccounts.isEmpty && !_isLoadingApi) {
+      // After loading, if still no data to display
+      return Center(
+        child: Text(
+          _activeSearchQuery.isNotEmpty
+              ? 'No accounts found for "$_activeSearchQuery".'
+              : 'No accounts to display. Tap + to add.',
+        ),
+      );
+    }
+
+    // DataTable is now inside a Column with Load More button, all wrapped in SingleChildScrollView
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          _buildDataTable(), // Renders _displayedAccounts
+          _buildPaginationControlsClientSide(),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDataTable() {
+    /* ... DataTable definition using _displayedAccounts ... */
     final List<DataColumn> columns = [
       DataColumn(
         label: Text('ID'),
@@ -7625,19 +7663,16 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         label: Text('Account Name'),
         tooltip: 'Account Name/Description',
         onSort: _onSort,
-      ), // Changed label slightly
-      DataColumn(label: Text('Actions')), // Actions column
+      ),
+      DataColumn(label: Text('Actions')),
     ];
-
     final List<DataRow> rows =
-        _filteredAccounts.map((account) {
+        _displayedAccounts.map((account) {
           return DataRow(
             cells: [
               DataCell(Text(account.id.toString())),
               DataCell(Text(account.accountNo.toString())),
-              DataCell(
-                Text(account.accountName),
-              ), // Displaying accountName as 'Description'
+              DataCell(Text(account.accountName)),
               DataCell(
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -7656,19 +7691,11 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 ),
               ),
             ],
-            // Optional: Select row to view details if you have a separate view page
             onSelectChanged: (selected) {
-              if (selected ?? false) {
-                // If you want to view details on row tap, ensure _viewAccount is implemented
-                // and you have a ViewAccountSettingPage that can display more details.
-                _viewAccount(
-                  account,
-                ); // Or remove onSelectChanged if direct edit/delete is enough
-              }
+              if (selected ?? false) _viewAccount(account);
             },
           );
         }).toList();
-
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
@@ -7676,9 +7703,8 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         rows: rows,
         sortColumnIndex: _sortColumnIndex,
         sortAscending: _sortAscending,
-        showCheckboxColumn:
-            true, // Set to true to enable onSelectChanged for the whole row
-        columnSpacing: 15, // Adjusted spacing
+        showCheckboxColumn: true,
+        columnSpacing: 15,
         headingRowHeight: 40,
         dataRowMinHeight: 48,
         headingTextStyle: TextStyle(
@@ -7692,20 +7718,34 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     );
   }
 
-  Widget _buildPaginationControls() {
-    if (_isLoading || _isFetchingMore) {
-      // Show loader if main loading or fetching more
+  Widget _buildPaginationControlsClientSide() {
+    print(
+      "ACC_SETTINGS_CLIENT_SIDE: _buildPaginationControls - _isLoadingApi: $_isLoadingApi, _canLoadMoreClient: $_canLoadMoreClient, displayed: ${_displayedAccounts.length}, allFetched: ${_allFetchedAccounts.length}",
+    );
+
+    if (_isLoadingApi && _allFetchedAccounts.isNotEmpty) {
+      // Show spinner at bottom if loading API for search but some data (old search) is there
       return Padding(
-        padding: const EdgeInsets.all(8.0),
+        padding: const EdgeInsets.all(16.0),
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    if (!_hasMoreData && _allAccounts.isEmpty) {
-      // No data at all
-      return SizedBox.shrink();
-    }
-    if (!_hasMoreData && _allAccounts.isNotEmpty) {
-      // Reached end of list
+
+    if (_canLoadMoreClient && !_isLoadingApi) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16.0),
+        child: Center(
+          child: ElevatedButton(
+            onPressed: () => _showNextClientPage(),
+            child: Text(
+              'Load More (${_allFetchedAccounts.length - _currentlyDisplayedItemsCount} remaining)',
+            ),
+          ),
+        ),
+      );
+    } else if (_allFetchedAccounts.isNotEmpty &&
+        !_canLoadMoreClient &&
+        !_isLoadingApi) {
       return Padding(
         padding: const EdgeInsets.all(16.0),
         child: Center(
@@ -7713,22 +7753,51 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         ),
       );
     }
-    // Show Load More button
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16.0),
-      child: Center(
-        child: ElevatedButton(
-          onPressed:
-              () => _fetchAccounts(
-                searchQuery: _searchController.text.trim(),
-              ), // Pass current search query
-          child: Text('Load More'),
+    return SizedBox.shrink(); // If no data or still initial loading
+  }
+
+  Widget _buildErrorWidget(String errorMessage) {
+    /* ... Error widget ... */
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: Colors.red.shade700, size: 60),
+            SizedBox(height: 15),
+            Text(
+              'Failed to Load Data',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.red.shade900,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 10),
+            Text(
+              errorMessage,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.black87),
+            ),
+            SizedBox(height: 25),
+            ElevatedButton.icon(
+              icon: Icon(Icons.refresh),
+              label: Text('Retry'),
+              onPressed: () => _fetchDataFromApiAndInitializeDisplay(),
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).primaryColor,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
-
 // ================================================================
 // END OF ACCOUNT SETTINGS PAGE
 // ================================================================
