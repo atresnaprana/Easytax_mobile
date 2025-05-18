@@ -2940,9 +2940,8 @@ class MemorialJournalPage extends StatefulWidget {
 class _MemorialJournalPageState extends State<MemorialJournalPage> {
   List<MemorialJournalEntry> _allApiEntriesMaster = []; // Master list from API
   List<MemorialJournalEntry> _processedClientSideEntries =
-      []; // After all client-side filters & sort
-  List<MemorialJournalEntry> _filteredEntries =
-      []; // UI List: Paginated subset of _processedClientSideEntries
+      []; // After ALL client-side filters & sort
+  List<MemorialJournalEntry> _filteredEntries = []; // UI List: Paginated subset
 
   bool _isLoadingApi = false;
   String? _error;
@@ -2952,51 +2951,60 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
   DateTime? _endDate;
 
   // Client-side Pagination State
-  final int _clientPageSize = 15; // How many items to show per "page"
-  int _clientCurrentPage =
-      1; // Current page *number* of client-side paginated data being displayed
-  bool _clientHasMoreDataToDisplay =
-      false; // If there are more items in _processedClientSideEntries to show
+  final int _clientPageSize = 15;
+  int _clientCurrentPage = 1;
+  bool _clientHasMoreDataToDisplay = false;
 
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
-  String _activeServerSearchQuery =
-      ''; // Query sent to server (if API supports it)
+  String _activeClientSearchQuery = ''; // Query for CLIENT-SIDE filtering
 
-  int _sortColumnIndex = 0;
+  // Sorting
+  int _sortColumnIndex = 0; // Default sort by Date
   bool _sortAscending = true;
 
   @override
   void initState() {
     super.initState();
-    print("MJ_NO_CRUD: initState");
-    _fetchApiDataAndProcessClientSide();
-    _searchController.addListener(_onSearchChanged);
+    print("MJ_CLIENT_SEARCH_DATE: initState");
+    _fetchApiDataAndProcessClientSide(); // Initial data load
+    _searchController.addListener(_onSearchChangedWithDebounce);
   }
 
   @override
   void dispose() {
-    _searchController.removeListener(_onSearchChanged);
+    _searchController.removeListener(_onSearchChangedWithDebounce);
     _searchController.dispose();
     _debounce?.cancel();
     super.dispose();
   }
 
-  void _onSearchChanged() {
+  void _onSearchChangedWithDebounce() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 700), () {
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      // Slightly shorter debounce
       if (!mounted) return;
       final newSearchQuery = _searchController.text.trim();
-      if (_activeServerSearchQuery != newSearchQuery) {
-        _activeServerSearchQuery = newSearchQuery;
-        _fetchApiDataAndProcessClientSide();
+      print(
+        "MJ_CLIENT_SEARCH_DATE: Debounce. Current Search: '$_activeClientSearchQuery', New: '$newSearchQuery'",
+      );
+      if (_activeClientSearchQuery != newSearchQuery) {
+        _activeClientSearchQuery = newSearchQuery;
+        // For Memorial Journal, if API doesn't support server-side search,
+        // we only need to re-apply client filters, not re-fetch from API.
+        _applyClientFiltersAndSortAndPaginate();
       }
     });
   }
 
+  // Fetches ALL data from API.
+  // Server-side search for Memorial Journal is assumed NOT to exist for this example.
+  // If it DOES, add `_activeClientSearchQuery` to `queryParams` for the API call.
   Future<void> _fetchApiDataAndProcessClientSide() async {
     if (!mounted || _isLoadingApi) return;
-    print("MJ_NO_CRUD: Fetching API. Search: '$_activeServerSearchQuery'");
+    print(
+      "MJ_CLIENT_SEARCH_DATE: Fetching API. Search: '$_activeClientSearchQuery'",
+    );
     setState(() {
       _isLoadingApi = true;
       _error = null;
@@ -3012,41 +3020,57 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
       String? token = prefs.getString('auth_token');
       if (token == null || token.isEmpty)
         throw Exception('Authentication required.');
-      var queryParams = {
-        if (_activeServerSearchQuery.isNotEmpty)
-          'search': _activeServerSearchQuery,
-      };
+
+      // --- Explicitly type queryParams as Map<String, String> ---
+      Map<String, String> queryParams = {};
+      if (_activeClientSearchQuery.isNotEmpty) {
+        // Renamed to _activeServerSearchQuery if sending to server
+        queryParams['search'] = _activeClientSearchQuery;
+      }
+      // Add other query parameters if your API needs them (e.g. for initial filtering by status)
+      // queryParams['status'] = 'active';
+      // ---------------------------------------------------------
+
       final url = Uri.parse(
         '$baseUrl/api/API/getdataJM',
-      ).replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
+      ) // Memorial Journal List API
+      .replace(
+        queryParameters: queryParams.isNotEmpty ? queryParams : null,
+      ); // Now queryParams is Map<String, String>
       final headers = {
         'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': 'Bearer $token',
       };
-      print("MJ_NO_CRUD: Fetching API URL: $url");
+
+      print("MJ_CLIENT_SEARCH_DATE: Fetching API URL: $url");
       final response = await http
           .get(url, headers: headers)
           .timeout(Duration(seconds: 45));
 
       if (!mounted) return;
+
       if (response.statusCode == 200) {
-        print("MJ_NO_CRUD: API success (200)");
+        print("MJ_CLIENT_SEARCH_DATE: API success (200)");
+        // json.decode returns List<dynamic> where each element is Map<String, dynamic>
         final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
         _allApiEntriesMaster =
-            data
-                .map((jsonItem) => MemorialJournalEntry.fromJson(jsonItem))
-                .toList();
+            data.map((jsonItem) {
+              // Ensure jsonItem is correctly cast if needed, though fromJson usually handles Map<String, dynamic>
+              return MemorialJournalEntry.fromJson(
+                jsonItem as Map<String, dynamic>,
+              );
+            }).toList();
         print(
-          "MJ_NO_CRUD: Fetched ${_allApiEntriesMaster.length} total entries from API.",
+          "MJ_CLIENT_SEARCH_DATE: Fetched ${_allApiEntriesMaster.length} total entries from API.",
         );
         _applyClientFiltersAndSortAndPaginate();
       } else {
         throw Exception(
-          'Failed to load entries. Status: ${response.statusCode}',
+          'Failed to load memorial entries. Status: ${response.statusCode}',
         );
       }
     } catch (e, s) {
-      print("MJ_NO_CRUD: EXCEPTION in _fetch: $e\n$s");
+      print("MJ_CLIENT_SEARCH_DATE: EXCEPTION in _fetch: $e\n$s");
       if (mounted)
         setState(() {
           _error = e.toString();
@@ -3057,6 +3081,90 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
           _isLoadingApi = false;
         });
     }
+  }
+
+  // Applies client-side search, then date filter, then sorts, then paginates
+  void _applyClientFiltersAndSortAndPaginate() {
+    if (!mounted) return;
+    print(
+      "MJ_CLIENT_SEARCH_DATE: Applying client filters, sort, paginate. Search: '$_activeClientSearchQuery'",
+    );
+
+    List<MemorialJournalEntry> currentlyProcessedList;
+
+    // 1. Apply Client-Side Search Filter (on transNo or description)
+    if (_activeClientSearchQuery.isEmpty) {
+      currentlyProcessedList = List.from(_allApiEntriesMaster);
+    } else {
+      final query = _activeClientSearchQuery.toLowerCase();
+      currentlyProcessedList =
+          _allApiEntriesMaster.where((entry) {
+            return entry.transNo.toLowerCase().contains(query) ||
+                entry.description.toLowerCase().contains(query);
+          }).toList();
+    }
+    print(
+      "MJ_CLIENT_SEARCH_DATE: After client search: ${currentlyProcessedList.length} entries.",
+    );
+
+    // 2. Apply Client-Side Date Filter to the search-filtered list
+    if (_startDate != null || _endDate != null) {
+      currentlyProcessedList =
+          currentlyProcessedList.where((entry) {
+            bool passesStartDate =
+                _startDate == null || !entry.transDate.isBefore(_startDate!);
+            bool passesEndDate =
+                _endDate == null || !entry.transDate.isAfter(_endDate!);
+            return passesStartDate && passesEndDate;
+          }).toList();
+    }
+    print(
+      "MJ_CLIENT_SEARCH_DATE: After date filter: ${currentlyProcessedList.length} entries.",
+    );
+
+    // 3. Sort the currentlyProcessedList
+    currentlyProcessedList.sort((a, b) {
+      int compareResult = 0;
+      switch (_sortColumnIndex) {
+        case 0:
+          compareResult = a.transDate.compareTo(b.transDate);
+          break;
+        case 1:
+          compareResult = a.transNo.compareTo(b.transNo);
+          break;
+        case 2:
+          compareResult = a.description.toLowerCase().compareTo(
+            b.description.toLowerCase(),
+          );
+          break;
+        case 3:
+          compareResult = a.debit.compareTo(b.debit);
+          break;
+        case 4:
+          compareResult = a.credit.compareTo(b.credit);
+          break;
+      }
+      return _sortAscending ? compareResult : -compareResult;
+    });
+    _processedClientSideEntries = currentlyProcessedList;
+    print(
+      "MJ_CLIENT_SEARCH_DATE: After sort: ${_processedClientSideEntries.length} entries.",
+    );
+
+    // 4. Reset client-side pagination and display the first "page"
+    setState(() {
+      _clientCurrentPage = 1;
+      _updatePaginatedUiList();
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    if (!mounted) return;
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applyClientFiltersAndSortAndPaginate(); // This will re-apply search, date, then sort, then paginate
+    });
   }
 
   Future<void> _selectDate(BuildContext context, bool isStartDate) async {
@@ -3084,7 +3192,7 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
           );
         }
       });
-      _applyClientFiltersAndSortAndPaginate();
+      _applyClientFiltersAndSortAndPaginate(); // Re-apply all client processing
     }
   }
 
@@ -3094,122 +3202,48 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
       _startDate = null;
       _endDate = null;
     });
-    _applyClientFiltersAndSortAndPaginate();
+    _applyClientFiltersAndSortAndPaginate(); // Re-apply all client processing
   }
 
-  void _applyClientFiltersAndSortAndPaginate() {
-    if (!mounted) return;
-    print("MJ_NO_CRUD: Applying client filters, sort, and paginate.");
-
-    List<MemorialJournalEntry> dateFilteredList =
-        _allApiEntriesMaster.where((entry) {
-          bool passesStartDate =
-              _startDate == null || !entry.transDate.isBefore(_startDate!);
-          bool passesEndDate =
-              _endDate == null || !entry.transDate.isAfter(_endDate!);
-          return passesStartDate && passesEndDate;
-        }).toList();
-    print("MJ_NO_CRUD: After date filter: ${dateFilteredList.length} entries.");
-
-    dateFilteredList.sort((a, b) {
-      int compareResult = 0;
-      switch (_sortColumnIndex) {
-        case 0:
-          compareResult = a.transDate.compareTo(b.transDate);
-          break;
-        case 1:
-          compareResult = a.transNo.compareTo(b.transNo);
-          break;
-        case 2:
-          compareResult = a.description.toLowerCase().compareTo(
-            b.description.toLowerCase(),
-          );
-          break;
-        case 3:
-          compareResult = a.debit.compareTo(b.debit);
-          break;
-        case 4:
-          compareResult = a.credit.compareTo(b.credit);
-          break;
-      }
-      return _sortAscending ? compareResult : -compareResult;
-    });
-    _processedClientSideEntries = dateFilteredList;
-    print(
-      "MJ_NO_CRUD: After sort: ${_processedClientSideEntries.length} entries.",
-    );
-
-    setState(() {
-      // This setState will trigger UI update with the first page
-      _clientCurrentPage = 1;
-      _updatePaginatedDisplay();
-    });
-  }
-
-  void _onSort(int columnIndex, bool ascending) {
-    if (!mounted) return;
-    setState(() {
-      _sortColumnIndex = columnIndex;
-      _sortAscending = ascending;
-      _applyClientFiltersAndSortAndPaginate();
-    });
-  }
-
-  void _updatePaginatedDisplay() {
+  void _updatePaginatedUiList() {
     if (!mounted) return;
     print(
-      "MJ_NO_CRUD: Updating paginated display. Client Page: $_clientCurrentPage, Processed count: ${_processedClientSideEntries.length}",
+      "MJ_CLIENT_SEARCH_DATE: Updating paginated display. Client Page: $_clientCurrentPage, Processed: ${_processedClientSideEntries.length}",
     );
-
     int startIndex = (_clientCurrentPage - 1) * _clientPageSize;
     int endIndex = startIndex + _clientPageSize;
-
-    if (startIndex >= _processedClientSideEntries.length) {
-      // This means we are trying to display a page beyond the available filtered data
-      _filteredEntries =
-          (_clientCurrentPage == 1)
-              ? []
-              : List.from(
-                _filteredEntries,
-              ); // Keep existing if not first page but no new items
-      _clientHasMoreDataToDisplay = false;
-    } else {
+    List<MemorialJournalEntry> nextPageItems = [];
+    if (startIndex < _processedClientSideEntries.length) {
       if (endIndex > _processedClientSideEntries.length) {
         endIndex = _processedClientSideEntries.length;
       }
+      nextPageItems = _processedClientSideEntries.sublist(startIndex, endIndex);
+    }
+    setState(() {
+      // This setState updates the actual UI list (_filteredEntries)
       if (_clientCurrentPage == 1) {
-        // For the first page or after a filter/sort reset
-        _filteredEntries = _processedClientSideEntries.sublist(
-          startIndex,
-          endIndex,
-        );
+        _filteredEntries = nextPageItems;
       } else {
-        // For "Load More", append
-        _filteredEntries.addAll(
-          _processedClientSideEntries.sublist(startIndex, endIndex),
-        );
+        _filteredEntries.addAll(nextPageItems);
       }
       _clientHasMoreDataToDisplay =
           endIndex < _processedClientSideEntries.length;
-    }
-    print(
-      "MJ_NO_CRUD: Displaying ${_filteredEntries.length} items. Client has more: $_clientHasMoreDataToDisplay",
-    );
-    // setState is called by the methods that call this if direct UI update is needed
+      print(
+        "MJ_CLIENT_SEARCH_DATE: Displaying ${_filteredEntries.length}. Client has more: $_clientHasMoreDataToDisplay",
+      );
+    });
   }
 
   void _loadMoreClientSide() {
     if (!mounted || !_clientHasMoreDataToDisplay || _isLoadingApi) return;
     print(
-      "MJ_NO_CRUD: Loading more client side. Next client page will be: ${_clientCurrentPage + 1}",
+      "MJ_CLIENT_SEARCH_DATE: Load more. Next client page: ${_clientCurrentPage + 1}",
     );
-    setState(() {
-      _clientCurrentPage++;
-      _updatePaginatedDisplay(); // This will append the next slice
-    });
+    _clientCurrentPage++;
+    _updatePaginatedUiList();
   }
 
-  // Action Handlers (Simplified - No Edit/Delete for this version)
+  // Action Handlers (No Edit/Delete for this page as per focus)
   void _viewEntry(MemorialJournalEntry entry) {
     Navigator.push(
       context,
@@ -3232,11 +3266,11 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
   @override
   Widget build(BuildContext context) {
     print(
-      "MJ_NO_CRUD: build - _isLoadingApi: $_isLoadingApi, _filteredEntries.length: ${_filteredEntries.length}, _error: $_error",
+      "MJ_CLIENT_SEARCH_DATE: build - _isLoadingApi: $_isLoadingApi, _filteredEntries.length: ${_filteredEntries.length}, _error: $_error",
     );
     return Scaffold(
       appBar: AppBar(
-        title: Text('Memorial Journal (Client Filter)'),
+        title: Text('Memorial Journal'),
         actions: [
           IconButton(
             icon: Icon(Icons.refresh),
@@ -3251,12 +3285,7 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
       body: Column(
         children: [
           Padding(
-            /* ... Search TextField ... */ padding: const EdgeInsets.fromLTRB(
-              12.0,
-              12.0,
-              12.0,
-              0,
-            ),
+            padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 0),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
@@ -3272,8 +3301,8 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
                           icon: Icon(Icons.clear),
                           onPressed: () {
                             _searchController.clear();
-                            _activeServerSearchQuery = '';
-                            _fetchApiDataAndProcessClientSide();
+                            _activeClientSearchQuery = '';
+                            _applyClientFiltersAndSortAndPaginate(); /* Re-filter with empty search */
                           },
                         )
                         : null,
@@ -3293,7 +3322,7 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
   }
 
   Widget _buildDateFilterControls() {
-    /* ... Date Filter UI ... */
+    /* ... Date Filter UI (same as before) ... */
     final DateFormat formatter = DateFormat('dd MMM yyyy');
     final Color primaryColor = Theme.of(context).primaryColor;
     return Padding(
@@ -3348,7 +3377,7 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
     if (_filteredEntries.isEmpty && !_isLoadingApi) {
       return Center(
         child: Text(
-          (_activeServerSearchQuery.isNotEmpty ||
+          (_activeClientSearchQuery.isNotEmpty ||
                   _startDate != null ||
                   _endDate != null)
               ? 'No entries found for current filters.'
@@ -3356,7 +3385,6 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
         ),
       );
     }
-
     return SingleChildScrollView(
       child: Column(
         children: [_buildDataTable(), _buildPaginationControlsClientSide()],
@@ -3393,7 +3421,7 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
         numeric: true,
         onSort: _onSort,
       ) /*DataColumn(label: Text('Actions')),*/,
-    ]; // Removed Actions column for simplicity
+    ];
     final List<DataRow> rows =
         _filteredEntries.map((entry) {
           return DataRow(
@@ -3404,7 +3432,7 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
               DataCell(Text(entry.formattedDebit)),
               DataCell(
                 Text(entry.formattedCredit),
-              ) /*DataCell( Row( mainAxisSize: MainAxisSize.min, children: [ IconButton(icon: Icon(Icons.visibility, size:20, color: Colors.grey), tooltip: 'View', onPressed: () => _viewEntry(entry)), ],),),*/,
+              ) /*DataCell(Text("View Only")),*/,
             ],
             onSelectChanged: (selected) {
               if (selected ?? false) _viewEntry(entry);
@@ -3434,12 +3462,11 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
       );
     }
     if (_clientHasMoreDataToDisplay && !_isLoadingApi) {
-      // Use the correct flag
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16.0),
         child: Center(
           child: ElevatedButton(
-            onPressed: _loadMoreClientSide, // Corrected call
+            onPressed: _loadMoreClientSide,
             child: Text(
               'Load More (${_processedClientSideEntries.length - _filteredEntries.length} remaining)',
             ),
@@ -3513,7 +3540,7 @@ class SalesJournalPage extends StatefulWidget {
 class _SalesJournalPageState extends State<SalesJournalPage> {
   List<SalesJournalEntry> _allApiEntriesMaster = [];
   List<SalesJournalEntry> _processedClientSideEntries = [];
-  List<SalesJournalEntry> _filteredEntries = []; // This is your UI list
+  List<SalesJournalEntry> _filteredEntries = []; // UI List
 
   bool _isLoadingApi = false;
   String? _error;
@@ -3527,7 +3554,7 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
 
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
-  String _activeServerSearchQuery = '';
+  String _activeClientSearchQuery = ''; // For CLIENT-SIDE search
 
   int _sortColumnIndex = 0;
   bool _sortAscending = true;
@@ -3535,36 +3562,37 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
   @override
   void initState() {
     super.initState();
-    print("SalesJournal_Corrected: initState");
+    print("SalesJournal_ClientFilter: initState");
     _fetchApiDataAndProcessClientSide();
-    _searchController.addListener(_onSearchChanged);
+    _searchController.addListener(_onSearchChangedWithDebounce);
   }
 
   @override
   void dispose() {
-    _searchController.removeListener(_onSearchChanged);
+    _searchController.removeListener(_onSearchChangedWithDebounce);
     _searchController.dispose();
     _debounce?.cancel();
     super.dispose();
   }
 
-  void _onSearchChanged() {
+  void _onSearchChangedWithDebounce() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 700), () {
+    _debounce = Timer(const Duration(milliseconds: 500), () {
       if (!mounted) return;
       final newSearchQuery = _searchController.text.trim();
-      if (_activeServerSearchQuery != newSearchQuery) {
-        _activeServerSearchQuery = newSearchQuery;
-        _fetchApiDataAndProcessClientSide();
+      print(
+        "SalesJournal_ClientFilter: Debounce. Current Search: '$_activeClientSearchQuery', New: '$newSearchQuery'",
+      );
+      if (_activeClientSearchQuery != newSearchQuery) {
+        _activeClientSearchQuery = newSearchQuery;
+        _applyClientFiltersAndSortAndPaginate(); // Re-filter client-side
       }
     });
   }
 
   Future<void> _fetchApiDataAndProcessClientSide() async {
     if (!mounted || _isLoadingApi) return;
-    print(
-      "SalesJournal_Corrected: Fetching API. Search: '$_activeServerSearchQuery'",
-    );
+    print("SalesJournal_ClientFilter: Fetching API.");
     setState(() {
       _isLoadingApi = true;
       _error = null;
@@ -3580,10 +3608,13 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
       String? token = prefs.getString('auth_token');
       if (token == null || token.isEmpty)
         throw Exception('Authentication required.');
-      var queryParams = {
-        if (_activeServerSearchQuery.isNotEmpty)
-          'search': _activeServerSearchQuery,
-      };
+      // API call for Sales Journal - Assuming it fetches ALL relevant data
+      // If it supports a server-side search, add `_activeClientSearchQuery` to queryParams
+      Map<String, String> queryParams = {};
+      // if (_activeClientSearchQuery.isNotEmpty) {
+      //   queryParams['search'] = _activeClientSearchQuery; // If API supports server-side search
+      // }
+
       final url = Uri.parse(
         '$baseUrl/api/API/getdataJPN',
       ) // Sales Journal Endpoint
@@ -3592,21 +3623,25 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
         'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': 'Bearer $token',
       };
-      print("SalesJournal_Corrected: Fetching API URL: $url");
+      print("SalesJournal_ClientFilter: Fetching API URL: $url");
       final response = await http
           .get(url, headers: headers)
           .timeout(Duration(seconds: 45));
 
       if (!mounted) return;
       if (response.statusCode == 200) {
-        print("SalesJournal_Corrected: API success (200)");
+        print("SalesJournal_ClientFilter: API success (200)");
         final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
         _allApiEntriesMaster =
             data
-                .map((jsonItem) => SalesJournalEntry.fromJson(jsonItem))
-                .toList(); // Use SalesJournalEntry.fromJson
+                .map(
+                  (jsonItem) => SalesJournalEntry.fromJson(
+                    jsonItem as Map<String, dynamic>,
+                  ),
+                )
+                .toList();
         print(
-          "SalesJournal_Corrected: Fetched ${_allApiEntriesMaster.length} total entries.",
+          "SalesJournal_ClientFilter: Fetched ${_allApiEntriesMaster.length} total entries.",
         );
         _applyClientFiltersAndSortAndPaginate();
       } else {
@@ -3615,7 +3650,7 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
         );
       }
     } catch (e, s) {
-      print("SalesJournal_Corrected: EXCEPTION in _fetch: $e\n$s");
+      print("SalesJournal_ClientFilter: EXCEPTION: $e\n$s");
       if (mounted)
         setState(() {
           _error = e.toString();
@@ -3658,7 +3693,7 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
   }
 
   void _clearFilter() {
-    // This is your original clear for date filters
+    // Renamed your original method
     if (!mounted) return;
     setState(() {
       _startDate = null;
@@ -3670,23 +3705,44 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
   void _applyClientFiltersAndSortAndPaginate() {
     if (!mounted) return;
     print(
-      "SalesJournal_Corrected: Applying client filters, sort, and paginate.",
+      "SalesJournal_ClientFilter: Applying client filters, sort, paginate. Search: '$_activeClientSearchQuery'",
     );
 
-    List<SalesJournalEntry> dateFilteredList =
-        _allApiEntriesMaster.where((entry) {
-          bool passesStartDate =
-              _startDate == null || !entry.transDate.isBefore(_startDate!);
-          bool passesEndDate =
-              _endDate == null || !entry.transDate.isAfter(_endDate!);
-          return passesStartDate && passesEndDate;
-        }).toList();
+    List<SalesJournalEntry> clientProcessedList;
+
+    // 1. Apply Client-Side Search Filter
+    if (_activeClientSearchQuery.isEmpty) {
+      clientProcessedList = List.from(_allApiEntriesMaster);
+    } else {
+      final query = _activeClientSearchQuery.toLowerCase();
+      clientProcessedList =
+          _allApiEntriesMaster.where((entry) {
+            return entry.transNo.toLowerCase().contains(query) ||
+                entry.description.toLowerCase().contains(query);
+            // Add other fields to search if needed, e.g., entry.Value.toString().contains(query)
+          }).toList();
+    }
     print(
-      "SalesJournal_Corrected: After date filter: ${dateFilteredList.length} entries.",
+      "SalesJournal_ClientFilter: After client search: ${clientProcessedList.length} entries.",
     );
 
-    // Sort the dateFilteredList
-    dateFilteredList.sort((a, b) {
+    // 2. Apply Client-Side Date Filter
+    if (_startDate != null || _endDate != null) {
+      clientProcessedList =
+          clientProcessedList.where((entry) {
+            bool passesStartDate =
+                _startDate == null || !entry.transDate.isBefore(_startDate!);
+            bool passesEndDate =
+                _endDate == null || !entry.transDate.isAfter(_endDate!);
+            return passesStartDate && passesEndDate;
+          }).toList();
+    }
+    print(
+      "SalesJournal_ClientFilter: After date filter: ${clientProcessedList.length} entries.",
+    );
+
+    // 3. Sort the list
+    clientProcessedList.sort((a, b) {
       int compareResult = 0;
       switch (_sortColumnIndex) {
         case 0:
@@ -3700,20 +3756,18 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
             b.description.toLowerCase(),
           );
           break;
-        // --- CORRECTED: Use Value and ValueDisc for sorting as per SalesJournalEntry model ---
         case 3:
           compareResult = a.Value.compareTo(b.Value);
-          break;
+          break; // Using Value for Sales
         case 4:
           compareResult = a.ValueDisc.compareTo(b.ValueDisc);
-          break;
-        // ------------------------------------------------------------------------------------
+          break; // Using ValueDisc for Sales
       }
       return _sortAscending ? compareResult : -compareResult;
     });
-    _processedClientSideEntries = dateFilteredList;
+    _processedClientSideEntries = clientProcessedList;
     print(
-      "SalesJournal_Corrected: After sort: ${_processedClientSideEntries.length} entries.",
+      "SalesJournal_ClientFilter: After sort: ${_processedClientSideEntries.length} entries.",
     );
 
     setState(() {
@@ -3733,24 +3787,16 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
 
   void _updatePaginatedUiList() {
     if (!mounted) return;
-    print(
-      "SalesJournal_Corrected: Updating paginated display. Client Page: $_clientCurrentPage, Processed: ${_processedClientSideEntries.length}",
-    );
-
     int startIndex = (_clientCurrentPage - 1) * _clientPageSize;
     int endIndex = startIndex + _clientPageSize;
-
     List<SalesJournalEntry> nextPageItems = [];
-
     if (startIndex < _processedClientSideEntries.length) {
       if (endIndex > _processedClientSideEntries.length) {
         endIndex = _processedClientSideEntries.length;
       }
       nextPageItems = _processedClientSideEntries.sublist(startIndex, endIndex);
     }
-
     setState(() {
-      // This setState updates the UI list
       if (_clientCurrentPage == 1) {
         _filteredEntries = nextPageItems;
       } else {
@@ -3758,20 +3804,13 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
       }
       _clientHasMoreDataToDisplay =
           endIndex < _processedClientSideEntries.length;
-      print(
-        "SalesJournal_Corrected: Displaying ${_filteredEntries.length}. Client has more: $_clientHasMoreDataToDisplay",
-      );
     });
   }
 
   void _loadMoreClientSide() {
     if (!mounted || !_clientHasMoreDataToDisplay || _isLoadingApi) return;
-    print(
-      "SalesJournal_Corrected: Loading more. Next client page will be: ${_clientCurrentPage + 1}",
-    );
-    // _clientCurrentPage is incremented *before* calling _updatePaginatedUiList
     _clientCurrentPage++;
-    _updatePaginatedUiList(); // This will append the next slice
+    _updatePaginatedUiList();
   }
 
   // Action Handlers
@@ -3829,8 +3868,8 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
                           icon: Icon(Icons.clear),
                           onPressed: () {
                             _searchController.clear();
-                            _activeServerSearchQuery = '';
-                            _fetchApiDataAndProcessClientSide();
+                            _activeClientSearchQuery = '';
+                            _applyClientFiltersAndSortAndPaginate();
                           },
                         )
                         : null,
@@ -3905,7 +3944,7 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
     if (_filteredEntries.isEmpty && !_isLoadingApi) {
       return Center(
         child: Text(
-          (_activeServerSearchQuery.isNotEmpty ||
+          (_activeClientSearchQuery.isNotEmpty ||
                   _startDate != null ||
                   _endDate != null)
               ? 'No entries found for current filters.'
@@ -3921,7 +3960,6 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
   }
 
   Widget _buildDataTable() {
-    // --- CORRECTED: Use SalesJournalEntry fields for columns and cells ---
     final List<DataColumn> columns = [
       DataColumn(
         label: Text('Date'),
@@ -3943,14 +3981,13 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
         tooltip: 'Transaction Value',
         numeric: true,
         onSort: _onSort,
-      ), // Corrected Header
+      ),
       DataColumn(
         label: Text('Discount'),
         tooltip: 'Discount Value',
         numeric: true,
         onSort: _onSort,
-      ), // Corrected Header
-      // DataColumn(label: Text('Actions')), // Removed actions as per request
+      ) /* DataColumn(label: Text('Actions')), */,
     ];
     final List<DataRow> rows =
         _filteredEntries.map((entry) {
@@ -3959,20 +3996,16 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
               DataCell(Text(entry.formattedDate)),
               DataCell(Text(entry.transNo)),
               DataCell(Text(entry.description)),
-              DataCell(
-                Text(entry.formattedValue),
-              ), // Corrected: Use formattedValue
+              DataCell(Text(entry.formattedValue)),
               DataCell(
                 Text(entry.formattedValueDisc),
-              ), // Corrected: Use formattedValueDisc
-              // DataCell(Text("View")), // Placeholder for actions if needed later
+              ) /* DataCell(Text("View")), */,
             ],
             onSelectChanged: (selected) {
               if (selected ?? false) _viewEntry(entry);
             },
           );
         }).toList();
-    // -------------------------------------------------------------------
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
@@ -4003,7 +4036,7 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
             onPressed: _loadMoreClientSide,
             child: Text(
               'Load More (${_processedClientSideEntries.length - _filteredEntries.length} remaining)',
-            ), // Show remaining from processed list
+            ),
           ),
         ),
       );
@@ -4068,87 +4101,69 @@ class PurchasingJournalPage extends StatefulWidget {
 }
 
 class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
-  List<PurchaseJournalEntry> _allEntries =
-      []; // This will now be the MASTER list from API
-  List<PurchaseJournalEntry> _processedForDisplay =
-      []; // List after date filter & sort on _allEntries
-  List<PurchaseJournalEntry> _filteredEntries =
-      []; // Your UI List: Paginated subset of _processedForDisplay
+  List<PurchaseJournalEntry> _allApiEntriesMaster = [];
+  List<PurchaseJournalEntry> _processedClientSideEntries = [];
+  List<PurchaseJournalEntry> _filteredEntries = []; // UI List
 
-  bool _isLoading = true; // Main loading for API fetch
-  // _isFetchingMore is not strictly needed for client-side pagination button,
-  // but we can use _isLoading to disable the button during any processing.
+  bool _isLoadingApi = false;
   String? _error;
 
-  // Date Filters
   DateTime? _startDate;
   DateTime? _endDate;
 
-  // Client-side pagination state
-  // _currentPage will now refer to the client-side page of _processedForDisplay
-  int _currentPage = 1;
-  final int _pageSize = 15; // Your original _pageSize, now for client-side view
-  bool _hasMoreData =
-      false; // For client-side: if _processedForDisplay has more items
+  final int _clientPageSize = 15;
+  int _clientCurrentPage = 1;
+  bool _clientHasMoreDataToDisplay = false;
 
-  // Search (Server-side, if API supports it)
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
-  String _activeServerSearchQuery = '';
+  String _activeClientSearchQuery = ''; // For CLIENT-SIDE search
 
-  // Sorting
   int _sortColumnIndex = 0;
   bool _sortAscending = true;
 
   @override
   void initState() {
     super.initState();
-    print("PurchaseJournal_ClientSide_YourStruct: initState");
-    _fetchJournalEntriesFromServer(
-      isFullRefresh: true,
-    ); // Changed name for clarity
-    _searchController.addListener(_onSearchChanged);
+    print("PurchaseJournal_ClientFilter: initState");
+    _fetchApiDataAndProcessClientSide();
+    _searchController.addListener(_onSearchChangedWithDebounce);
   }
 
   @override
   void dispose() {
-    _searchController.removeListener(_onSearchChanged);
+    _searchController.removeListener(_onSearchChangedWithDebounce);
     _searchController.dispose();
     _debounce?.cancel();
     super.dispose();
   }
 
-  void _onSearchChanged() {
+  void _onSearchChangedWithDebounce() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 700), () {
+    _debounce = Timer(const Duration(milliseconds: 500), () {
       if (!mounted) return;
       final newSearchQuery = _searchController.text.trim();
-      if (_activeServerSearchQuery != newSearchQuery) {
-        _activeServerSearchQuery = newSearchQuery;
-        _fetchJournalEntriesFromServer(isFullRefresh: true);
+      print(
+        "PurchaseJournal_ClientFilter: Debounce. Current Search: '$_activeClientSearchQuery', New: '$newSearchQuery'",
+      );
+      if (_activeClientSearchQuery != newSearchQuery) {
+        _activeClientSearchQuery = newSearchQuery;
+        _applyClientFiltersAndSortAndPaginate(); // Re-filter client-side
       }
     });
   }
 
-  // Renamed your original _fetchJournalEntries to clarify it fetches ALL from server
-  Future<void> _fetchJournalEntriesFromServer({
-    required bool isFullRefresh,
-  }) async {
-    if (!mounted || (_isLoading && !isFullRefresh)) return;
-    print(
-      "PurchaseJournal_ClientSide_YourStruct: Fetching ALL from API. Refresh: $isFullRefresh, Search: '$_activeServerSearchQuery'",
-    );
+  Future<void> _fetchApiDataAndProcessClientSide() async {
+    if (!mounted || _isLoadingApi) return;
+    print("PurchaseJournal_ClientFilter: Fetching API.");
     setState(() {
-      _isLoading = true;
+      _isLoadingApi = true;
       _error = null;
-      if (isFullRefresh) {
-        _allEntries.clear(); // Clear the master API list
-        _processedForDisplay.clear();
-        _filteredEntries.clear(); // Clear the UI list
-        _currentPage = 1; // Reset client-side page
-        _hasMoreData = false; // Will be set by _updatePaginatedUiList
-      }
-      // _isFetchingMore = false; // Not needed if using single _isLoading
+      _allApiEntriesMaster.clear();
+      _processedClientSideEntries.clear();
+      _filteredEntries.clear();
+      _clientCurrentPage = 1;
+      _clientHasMoreDataToDisplay = false;
     });
 
     try {
@@ -4156,10 +4171,10 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
       String? token = prefs.getString('auth_token');
       if (token == null || token.isEmpty)
         throw Exception('Authentication required.');
-      var queryParams = {
-        if (_activeServerSearchQuery.isNotEmpty)
-          'search': _activeServerSearchQuery,
-      };
+      Map<String, String> queryParams = {};
+      // if (_activeClientSearchQuery.isNotEmpty) { // If server-side search for Purchase is an option
+      //   queryParams['search'] = _activeClientSearchQuery;
+      // }
       final url = Uri.parse(
         '$baseUrl/api/API/getdataJPB',
       ) // Purchase Journal Endpoint
@@ -4168,32 +4183,34 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
         'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': 'Bearer $token',
       };
-      print("PurchaseJournal_ClientSide_YourStruct: Fetching API URL: $url");
+      print("PurchaseJournal_ClientFilter: Fetching API URL: $url");
       final response = await http
           .get(url, headers: headers)
           .timeout(Duration(seconds: 45));
 
       if (!mounted) return;
       if (response.statusCode == 200) {
-        print("PurchaseJournal_ClientSide_YourStruct: API success (200)");
+        print("PurchaseJournal_ClientFilter: API success (200)");
         final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
-        _allEntries =
+        _allApiEntriesMaster =
             data
-                .map((jsonItem) => PurchaseJournalEntry.fromJson(jsonItem))
+                .map(
+                  (jsonItem) => PurchaseJournalEntry.fromJson(
+                    jsonItem as Map<String, dynamic>,
+                  ),
+                )
                 .toList();
         print(
-          "PurchaseJournal_ClientSide_YourStruct: Fetched ${_allEntries.length} total entries from API.",
+          "PurchaseJournal_ClientFilter: Fetched ${_allApiEntriesMaster.length} total entries.",
         );
-        _applyFilter(); // This will now apply client filters, sort, and set up first page display
+        _applyClientFiltersAndSortAndPaginate();
       } else {
         throw Exception(
           'Failed to load purchase entries. Status: ${response.statusCode}',
         );
       }
     } catch (e, s) {
-      print(
-        "PurchaseJournal_ClientSide_YourStruct: EXCEPTION in _fetch: $e\n$s",
-      );
+      print("PurchaseJournal_ClientFilter: EXCEPTION: $e\n$s");
       if (mounted)
         setState(() {
           _error = e.toString();
@@ -4201,7 +4218,7 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
     } finally {
       if (mounted)
         setState(() {
-          _isLoading = false; /* _isFetchingMore = false; */
+          _isLoadingApi = false;
         });
     }
   }
@@ -4217,7 +4234,6 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
     );
     if (picked != null && mounted) {
       setState(() {
-        // Set the date filter state
         if (isStartDate) {
           _startDate = picked;
         } else {
@@ -4232,42 +4248,57 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
           );
         }
       });
-      _applyFilter(); // Re-process the _allEntries list
+      _applyClientFiltersAndSortAndPaginate();
     }
   }
 
   void _clearFilter() {
-    // Your original _clearFilter
+    // Renamed your original method
     if (!mounted) return;
     setState(() {
       _startDate = null;
       _endDate = null;
     });
-    _applyFilter(); // Re-process the _allEntries list
+    _applyClientFiltersAndSortAndPaginate();
   }
 
-  // _applyFilter now processes _allEntries, sorts, and sets up the first client-side page
-  void _applyFilter() {
+  void _applyClientFiltersAndSortAndPaginate() {
     if (!mounted) return;
     print(
-      "PurchaseJournal_ClientSide_YourStruct: Applying client filters and sort.",
+      "PurchaseJournal_ClientFilter: Applying client filters, sort, paginate. Search: '$_activeClientSearchQuery'",
     );
 
-    // 1. Start with all entries fetched from API
-    List<PurchaseJournalEntry> dateFilteredList =
-        _allEntries.where((entry) {
-          bool passesStartDate =
-              _startDate == null || !entry.transDate.isBefore(_startDate!);
-          bool passesEndDate =
-              _endDate == null || !entry.transDate.isAfter(_endDate!);
-          return passesStartDate && passesEndDate;
-        }).toList();
+    List<PurchaseJournalEntry> clientProcessedList;
+
+    if (_activeClientSearchQuery.isEmpty) {
+      clientProcessedList = List.from(_allApiEntriesMaster);
+    } else {
+      final query = _activeClientSearchQuery.toLowerCase();
+      clientProcessedList =
+          _allApiEntriesMaster.where((entry) {
+            return entry.transNo.toLowerCase().contains(query) ||
+                entry.description.toLowerCase().contains(query);
+          }).toList();
+    }
     print(
-      "PurchaseJournal_ClientSide_YourStruct: After date filter: ${dateFilteredList.length} entries.",
+      "PurchaseJournal_ClientFilter: After client search: ${clientProcessedList.length} entries.",
     );
 
-    // 2. Sort the dateFilteredList (your original _applySort logic is here)
-    dateFilteredList.sort((a, b) {
+    if (_startDate != null || _endDate != null) {
+      clientProcessedList =
+          clientProcessedList.where((entry) {
+            bool passesStartDate =
+                _startDate == null || !entry.transDate.isBefore(_startDate!);
+            bool passesEndDate =
+                _endDate == null || !entry.transDate.isAfter(_endDate!);
+            return passesStartDate && passesEndDate;
+          }).toList();
+    }
+    print(
+      "PurchaseJournal_ClientFilter: After date filter: ${clientProcessedList.length} entries.",
+    );
+
+    clientProcessedList.sort((a, b) {
       int compareResult = 0;
       switch (_sortColumnIndex) {
         case 0:
@@ -4290,78 +4321,55 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
       }
       return _sortAscending ? compareResult : -compareResult;
     });
-    _processedForDisplay =
-        dateFilteredList; // Store the fully client-processed list
+    _processedClientSideEntries = clientProcessedList;
     print(
-      "PurchaseJournal_ClientSide_YourStruct: After sort: ${_processedForDisplay.length} entries.",
+      "PurchaseJournal_ClientFilter: After sort: ${_processedClientSideEntries.length} entries.",
     );
 
-    // 3. Reset client-side pagination and display the first "page" of _processedForDisplay
     setState(() {
-      _currentPage = 1; // Reset to page 1 of the NEWLY processed list
-      _updatePaginatedUiList(); // Update _filteredEntries (UI list)
+      _clientCurrentPage = 1;
+      _updatePaginatedUiList();
     });
   }
 
   void _onSort(int columnIndex, bool ascending) {
     if (!mounted) return;
     setState(() {
-      // For UI sort indicator update
       _sortColumnIndex = columnIndex;
       _sortAscending = ascending;
-      _applyFilter(); // Re-apply filters which will also re-sort and reset pagination
+      _applyClientFiltersAndSortAndPaginate();
     });
   }
 
-  // Updates _filteredEntries (your UI list) based on _processedForDisplay and _currentPage
   void _updatePaginatedUiList() {
     if (!mounted) return;
-    print(
-      "PurchaseJournal_ClientSide_YourStruct: Updating paginated display. Client Page: $_currentPage, Processed count: ${_processedForDisplay.length}",
-    );
-
-    int startIndex =
-        (_currentPage - 1) * _pageSize; // Use _pageSize for client-side view
-    int endIndex = startIndex + _pageSize;
-
+    int startIndex = (_clientCurrentPage - 1) * _clientPageSize;
+    int endIndex = startIndex + _clientPageSize;
     List<PurchaseJournalEntry> nextPageItems = [];
-
-    if (startIndex < _processedForDisplay.length) {
-      if (endIndex > _processedForDisplay.length) {
-        endIndex = _processedForDisplay.length;
+    if (startIndex < _processedClientSideEntries.length) {
+      if (endIndex > _processedClientSideEntries.length) {
+        endIndex = _processedClientSideEntries.length;
       }
-      nextPageItems = _processedForDisplay.sublist(startIndex, endIndex);
+      nextPageItems = _processedClientSideEntries.sublist(startIndex, endIndex);
     }
-
-    // This logic ensures correct append vs. replace for _filteredEntries
-    // If _currentPage is 1, it means we are displaying the first page (after filter/sort/initial)
-    // If _currentPage > 1, it means "Load More" was pressed, so we append.
-    if (_currentPage == 1) {
-      _filteredEntries = nextPageItems;
-    } else {
-      _filteredEntries.addAll(nextPageItems); // Append for "Load More"
-    }
-    _hasMoreData = endIndex < _processedForDisplay.length;
-
-    print(
-      "PurchaseJournal_ClientSide_YourStruct: Displaying ${_filteredEntries.length} items. Client has more: $_hasMoreData",
-    );
-    // setState is called by the methods that call this (_applyFilter or _loadMoreClientSide)
+    setState(() {
+      if (_clientCurrentPage == 1) {
+        _filteredEntries = nextPageItems;
+      } else {
+        _filteredEntries.addAll(nextPageItems);
+      }
+      _clientHasMoreDataToDisplay =
+          endIndex < _processedClientSideEntries.length;
+    });
   }
 
   void _loadMoreClientSide() {
-    // New function for "Load More" button
-    if (!mounted || !_hasMoreData || _isLoading) return;
-    print(
-      "PurchaseJournal_ClientSide_YourStruct: Loading more client side. Next client page will be: ${_currentPage + 1}",
-    );
-    setState(() {
-      _currentPage++; // Increment the client-side page we want to display up to
-      _updatePaginatedUiList(); // This will append the next slice to _filteredEntries
-    });
+    if (!mounted || !_clientHasMoreDataToDisplay || _isLoadingApi) return;
+    _clientCurrentPage++;
+    _updatePaginatedUiList();
   }
 
-  // Action Handlers (View, Add - NO Edit/Delete as requested)
+  // Action Handlers
   void _viewEntry(PurchaseJournalEntry entry) {
     Navigator.push(
       context,
@@ -4377,15 +4385,12 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
       MaterialPageRoute(builder: (context) => AddPurchaseJournalEntryPage()),
     );
     if (result == true && mounted) {
-      _fetchJournalEntriesFromServer(isFullRefresh: true);
+      _fetchApiDataAndProcessClientSide();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    print(
-      "PurchaseJournal_ClientSide_YourStruct: build - _isLoading: $_isLoading, _filteredEntries.length: ${_filteredEntries.length}, _error: $_error",
-    );
     return Scaffold(
       appBar: AppBar(
         title: Text('Purchasing Journal'),
@@ -4394,9 +4399,9 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
             icon: Icon(Icons.refresh),
             tooltip: 'Refresh Data',
             onPressed:
-                _isLoading
+                _isLoadingApi
                     ? null
-                    : () => _fetchJournalEntriesFromServer(isFullRefresh: true),
+                    : () => _fetchApiDataAndProcessClientSide(),
           ),
         ],
       ),
@@ -4419,29 +4424,28 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
                           icon: Icon(Icons.clear),
                           onPressed: () {
                             _searchController.clear();
-                            _activeServerSearchQuery = '';
-                            _fetchJournalEntriesFromServer(isFullRefresh: true);
+                            _activeClientSearchQuery = '';
+                            _applyClientFiltersAndSortAndPaginate();
                           },
                         )
                         : null,
               ),
             ),
           ),
-          _buildDateFilterControls(), // Using your original method name
-          Expanded(child: _buildBodyDataArea()), // Renamed for clarity
+          _buildDateFilterControls(),
+          Expanded(child: _buildDataArea()),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _navigateToAddPage,
         tooltip: 'Add Purchase Journal',
-        child: Icon(Icons.add),
+        child: Icon(Icons.add_business_outlined),
         backgroundColor: Colors.orange,
       ),
     );
   }
 
   Widget _buildDateFilterControls() {
-    // Renamed from _buildDateFilterRow
     final DateFormat formatter = DateFormat('dd MMM yyyy');
     final Color primaryColor = Theme.of(context).primaryColor;
     return Padding(
@@ -4481,9 +4485,8 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
     );
   }
 
-  Widget _buildBodyDataArea() {
-    // Renamed from _buildBody
-    if (_isLoading && _allEntries.isEmpty) {
+  Widget _buildDataArea() {
+    if (_isLoadingApi && _allApiEntriesMaster.isEmpty) {
       return Center(child: CircularProgressIndicator());
     }
     if (_error != null) {
@@ -4494,10 +4497,10 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
         ),
       );
     }
-    if (_filteredEntries.isEmpty && !_isLoading) {
+    if (_filteredEntries.isEmpty && !_isLoadingApi) {
       return Center(
         child: Text(
-          (_activeServerSearchQuery.isNotEmpty ||
+          (_activeClientSearchQuery.isNotEmpty ||
                   _startDate != null ||
                   _endDate != null)
               ? 'No entries found for current filters.'
@@ -4505,19 +4508,14 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
         ),
       );
     }
-
     return SingleChildScrollView(
       child: Column(
-        children: [
-          _buildDataTable(),
-          _buildPaginationControls(), // Using your original method name
-        ],
+        children: [_buildDataTable(), _buildPaginationControlsClientSide()],
       ),
     );
   }
 
   Widget _buildDataTable() {
-    // Use PurchaseJournalEntry fields for columns and cells
     final List<DataColumn> columns = [
       DataColumn(
         label: Text('Date'),
@@ -4536,17 +4534,17 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
       ),
       DataColumn(
         label: Text('Value'),
-        tooltip: 'Value Amount',
+        tooltip: 'Transaction Value',
         numeric: true,
         onSort: _onSort,
       ),
       DataColumn(
         label: Text('Discount'),
-        tooltip: 'Discount Amount',
+        tooltip: 'Discount Value',
         numeric: true,
         onSort: _onSort,
-      ) /*DataColumn(label: Text('Actions')),*/,
-    ]; // Removed Actions for now
+      ) /* DataColumn(label: Text('Actions')), */,
+    ];
     final List<DataRow> rows =
         _filteredEntries.map((entry) {
           return DataRow(
@@ -4557,7 +4555,7 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
               DataCell(Text(entry.formattedValue)),
               DataCell(
                 Text(entry.formattedValueDisc),
-              ) /*DataCell(Text("View")),*/,
+              ) /* DataCell(Text("View")), */,
             ],
             onSelectChanged: (selected) {
               if (selected ?? false) _viewEntry(entry);
@@ -4577,32 +4575,30 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
     );
   }
 
-  Widget _buildPaginationControls() {
-    // Kept your original method name
-    // Show loader if API is fetching (isLoading) AND some data is already displayed (not initial load)
-    if (_isLoading &&
-        _allEntries.isNotEmpty &&
-        _filteredEntries.length < _processedForDisplay.length) {
+  Widget _buildPaginationControlsClientSide() {
+    if (_isLoadingApi &&
+        _allApiEntriesMaster.isNotEmpty &&
+        _filteredEntries.length < _processedClientSideEntries.length) {
       return Padding(
         padding: const EdgeInsets.all(16.0),
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    if (_hasMoreData && !_isLoading) {
-      // Use _hasMoreData (client-side flag)
+    if (_clientHasMoreDataToDisplay && !_isLoadingApi) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16.0),
         child: Center(
           child: ElevatedButton(
-            onPressed:
-                _loadMoreClientSide, // Call the new client-side load more
+            onPressed: _loadMoreClientSide,
             child: Text(
-              'Load More (${_processedForDisplay.length - _filteredEntries.length} remaining)',
+              'Load More (${_processedClientSideEntries.length - _filteredEntries.length} remaining)',
             ),
           ),
         ),
       );
-    } else if (_allEntries.isNotEmpty && !_hasMoreData && !_isLoading) {
+    } else if (_allApiEntriesMaster.isNotEmpty &&
+        !_clientHasMoreDataToDisplay &&
+        !_isLoadingApi) {
       return Padding(
         padding: const EdgeInsets.all(16.0),
         child: Center(
@@ -4642,8 +4638,7 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
             ElevatedButton.icon(
               icon: Icon(Icons.refresh),
               label: Text('Retry'),
-              onPressed:
-                  () => _fetchJournalEntriesFromServer(isFullRefresh: true),
+              onPressed: () => _fetchApiDataAndProcessClientSide(),
               style: ElevatedButton.styleFrom(
                 foregroundColor: Colors.white,
                 backgroundColor: Theme.of(context).primaryColor,
