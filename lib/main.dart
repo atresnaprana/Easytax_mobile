@@ -7744,7 +7744,6 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   }
 
   void _deleteAccount(AccountSettingEntry account) async {
-    /* ... delete logic, calls _fetchApiDataFromServer() ... */
     final confirm = await showDialog<bool>(
       context: context,
       builder:
@@ -7765,44 +7764,85 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             ],
           ),
     );
+
     if (confirm == true) {
       if (!mounted) return;
-      setState(() => _isLoadingApi = true);
+      setState(() {
+        _isLoadingApi = true;
+      }); // Use the main loading flag for the page
       try {
         SharedPreferences prefs = await SharedPreferences.getInstance();
         String? token = prefs.getString('auth_token');
         if (token == null || token.isEmpty)
           throw Exception('Authentication required.');
-        final url = Uri.parse('$baseUrl/api/Admin/DeleteAccount/${account.id}');
-        final headers = {'Authorization': 'Bearer $token'};
-        print("Deleting Account: $url");
+
+        // --- Construct URL with id as query parameter for POST ---
+        final Uri url = Uri.parse(
+          '$baseUrl/api/API/DeleteAccount',
+        ).replace(queryParameters: {'id': account.id.toString()});
+        // -------------------------------------------------------
+
+        final headers = {
+          // 'Content-Type' is not strictly needed for a POST with no body,
+          // but some servers might still expect it. Can be omitted.
+          // 'Content-Type': 'application/json; charset=UTF-8',
+          'Authorization': 'Bearer $token',
+        };
+
+        print("Deleting Account ${account.id} URL: $url (Using POST)");
+
+        // --- Use http.post as per your cURL specification ---
+        // Send an empty body or null if the server doesn't care.
+        // Some servers require an empty JSON object '{}' for POST even if no data.
         final response = await http
-            .delete(url, headers: headers)
+            .post(url, headers: headers /*, body: json.encode({}) */)
             .timeout(Duration(seconds: 30));
+        // ----------------------------------------------------
+
         if (!mounted) return;
         if (response.statusCode == 200 || response.statusCode == 204) {
+          // 200 OK or 204 No Content
+          print(
+            "Delete Account Success (Status: ${response.statusCode}): ${response.body}",
+          );
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Account deleted successfully.'),
               backgroundColor: Colors.green,
             ),
           );
-          _fetchApiDataFromServer();
+          _fetchApiDataFromServer(); // Refresh the list
         } else {
+          String serverMessage = response.reasonPhrase ?? 'Delete Failed';
+          try {
+            var errorData = json.decode(response.body);
+            serverMessage =
+                errorData['message'] ??
+                errorData['title'] ??
+                errorData['error'] ??
+                serverMessage;
+          } catch (_) {
+            /* Ignore if body not JSON */
+          }
+          print("Delete Account Failed Body: ${response.body}");
           throw Exception(
-            'Failed to delete account. Status: ${response.statusCode}',
+            'Failed to delete account. Server Response: ${response.statusCode} - $serverMessage',
           );
         }
       } catch (e) {
+        print("Error deleting account: $e");
         if (mounted)
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error deleting: ${e.toString()}'),
+              content: Text('Error deleting account: ${e.toString()}'),
               backgroundColor: Colors.red,
             ),
           );
       } finally {
-        if (mounted) setState(() => _isLoadingApi = false);
+        if (mounted)
+          setState(() {
+            _isLoadingApi = false;
+          }); // Use the main loading flag
       }
     }
   }
