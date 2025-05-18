@@ -2938,93 +2938,124 @@ class MemorialJournalPage extends StatefulWidget {
 }
 
 class _MemorialJournalPageState extends State<MemorialJournalPage> {
-  List<MemorialJournalEntry> _allEntries = [];
-  List<MemorialJournalEntry> _filteredEntries = [];
-  bool _isLoading = true;
-  bool _isFetchingMore = false;
+  List<MemorialJournalEntry> _allApiEntriesMaster = []; // Master list from API
+  List<MemorialJournalEntry> _processedClientSideEntries =
+      []; // After all client-side filters & sort
+  List<MemorialJournalEntry> _filteredEntries =
+      []; // UI List: Paginated subset of _processedClientSideEntries
+
+  bool _isLoadingApi = false;
   String? _error;
+
+  // Date Filters
   DateTime? _startDate;
   DateTime? _endDate;
-  int _currentPage = 1;
-  final int _pageSize = 10;
-  bool _hasMoreData = true;
+
+  // Client-side Pagination State
+  final int _clientPageSize = 15; // How many items to show per "page"
+  int _clientCurrentPage =
+      1; // Current page *number* of client-side paginated data being displayed
+  bool _clientHasMoreDataToDisplay =
+      false; // If there are more items in _processedClientSideEntries to show
+
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
+  String _activeServerSearchQuery =
+      ''; // Query sent to server (if API supports it)
+
   int _sortColumnIndex = 0;
   bool _sortAscending = true;
 
   @override
   void initState() {
     super.initState();
-    _fetchJournalEntries(isInitialLoad: true);
+    print("MJ_NO_CRUD: initState");
+    _fetchApiDataAndProcessClientSide();
+    _searchController.addListener(_onSearchChanged);
   }
 
-  Future<void> _fetchJournalEntries({bool isInitialLoad = false}) async {
-    if (_isFetchingMore || (!isInitialLoad && !_hasMoreData)) return;
-    if (!mounted) return;
-    setState(() {
-      if (isInitialLoad) {
-        _isLoading = true;
-        _currentPage = 1;
-        _allEntries.clear();
-        _filteredEntries.clear();
-        _hasMoreData = true;
-      } else {
-        _isFetchingMore = true;
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      final newSearchQuery = _searchController.text.trim();
+      if (_activeServerSearchQuery != newSearchQuery) {
+        _activeServerSearchQuery = newSearchQuery;
+        _fetchApiDataAndProcessClientSide();
       }
-      _error = null;
     });
-    int pageToFetch = isInitialLoad ? 1 : _currentPage + 1;
+  }
+
+  Future<void> _fetchApiDataAndProcessClientSide() async {
+    if (!mounted || _isLoadingApi) return;
+    print("MJ_NO_CRUD: Fetching API. Search: '$_activeServerSearchQuery'");
+    setState(() {
+      _isLoadingApi = true;
+      _error = null;
+      _allApiEntriesMaster.clear();
+      _processedClientSideEntries.clear();
+      _filteredEntries.clear();
+      _clientCurrentPage = 1;
+      _clientHasMoreDataToDisplay = false;
+    });
+
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('auth_token');
-      if (token == null || token.isEmpty) {
+      if (token == null || token.isEmpty)
         throw Exception('Authentication required.');
-      }
+      var queryParams = {
+        if (_activeServerSearchQuery.isNotEmpty)
+          'search': _activeServerSearchQuery,
+      };
       final url = Uri.parse(
-        '$baseUrl/api/API/getdataJM?page=$pageToFetch&pageSize=$_pageSize',
-      );
+        '$baseUrl/api/API/getdataJM',
+      ).replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
       final headers = {
         'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': 'Bearer $token',
       };
+      print("MJ_NO_CRUD: Fetching API URL: $url");
       final response = await http
           .get(url, headers: headers)
           .timeout(Duration(seconds: 45));
+
       if (!mounted) return;
       if (response.statusCode == 200) {
+        print("MJ_NO_CRUD: API success (200)");
         final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
-        final List<MemorialJournalEntry> newEntries =
+        _allApiEntriesMaster =
             data
                 .map((jsonItem) => MemorialJournalEntry.fromJson(jsonItem))
                 .toList();
-        if (newEntries.length < _pageSize) {
-          _hasMoreData = false;
-        }
-        _allEntries.addAll(newEntries);
-        _currentPage = pageToFetch;
-        _applyFilter();
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        throw Exception(
-          'Session expired or unauthorized (Code: ${response.statusCode}).',
+        print(
+          "MJ_NO_CRUD: Fetched ${_allApiEntriesMaster.length} total entries from API.",
         );
+        _applyClientFiltersAndSortAndPaginate();
       } else {
         throw Exception(
-          'Failed to load data. Status Code: ${response.statusCode}\nBody: ${response.body}',
+          'Failed to load entries. Status: ${response.statusCode}',
         );
       }
-    } on TimeoutException catch (e) {
-      _error = e.message ?? "Request timed out.";
-    } on http.ClientException catch (e) {
-      _error = "Network error: ${e.message}.";
-    } catch (e) {
-      print("Error (Page $pageToFetch): $e");
-      _error = "An unexpected error occurred: ${e.toString()}";
-    } finally {
-      if (mounted) {
+    } catch (e, s) {
+      print("MJ_NO_CRUD: EXCEPTION in _fetch: $e\n$s");
+      if (mounted)
         setState(() {
-          _isLoading = false;
-          _isFetchingMore = false;
+          _error = e.toString();
         });
-      }
+    } finally {
+      if (mounted)
+        setState(() {
+          _isLoadingApi = false;
+        });
     }
   }
 
@@ -3052,47 +3083,35 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
             999,
           );
         }
-        _applyFilter();
       });
+      _applyClientFiltersAndSortAndPaginate();
     }
   }
 
-  void _applyFilter() {
-    if (!mounted) return;
-    setState(() {
-      _filteredEntries =
-          _allEntries.where((entry) {
-            bool passesStartDate =
-                _startDate == null || !entry.transDate.isBefore(_startDate!);
-            bool passesEndDate =
-                _endDate == null || !entry.transDate.isAfter(_endDate!);
-            return passesStartDate && passesEndDate;
-          }).toList();
-      _applySort();
-    });
-  }
-
-  void _clearFilter() {
+  void _clearDateFilters() {
     if (!mounted) return;
     setState(() {
       _startDate = null;
       _endDate = null;
-      _filteredEntries = List.from(_allEntries);
-      _applySort();
     });
+    _applyClientFiltersAndSortAndPaginate();
   }
 
-  void _onSort(int columnIndex, bool ascending) {
+  void _applyClientFiltersAndSortAndPaginate() {
     if (!mounted) return;
-    setState(() {
-      _sortColumnIndex = columnIndex;
-      _sortAscending = ascending;
-      _applySort();
-    });
-  }
+    print("MJ_NO_CRUD: Applying client filters, sort, and paginate.");
 
-  void _applySort() {
-    _filteredEntries.sort((a, b) {
+    List<MemorialJournalEntry> dateFilteredList =
+        _allApiEntriesMaster.where((entry) {
+          bool passesStartDate =
+              _startDate == null || !entry.transDate.isBefore(_startDate!);
+          bool passesEndDate =
+              _endDate == null || !entry.transDate.isAfter(_endDate!);
+          return passesStartDate && passesEndDate;
+        }).toList();
+    print("MJ_NO_CRUD: After date filter: ${dateFilteredList.length} entries.");
+
+    dateFilteredList.sort((a, b) {
       int compareResult = 0;
       switch (_sortColumnIndex) {
         case 0:
@@ -3102,7 +3121,9 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
           compareResult = a.transNo.compareTo(b.transNo);
           break;
         case 2:
-          compareResult = a.description.compareTo(b.description);
+          compareResult = a.description.toLowerCase().compareTo(
+            b.description.toLowerCase(),
+          );
           break;
         case 3:
           compareResult = a.debit.compareTo(b.debit);
@@ -3113,85 +3134,174 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
       }
       return _sortAscending ? compareResult : -compareResult;
     });
+    _processedClientSideEntries = dateFilteredList;
+    print(
+      "MJ_NO_CRUD: After sort: ${_processedClientSideEntries.length} entries.",
+    );
+
+    setState(() {
+      // This setState will trigger UI update with the first page
+      _clientCurrentPage = 1;
+      _updatePaginatedDisplay();
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    if (!mounted) return;
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applyClientFiltersAndSortAndPaginate();
+    });
+  }
+
+  void _updatePaginatedDisplay() {
+    if (!mounted) return;
+    print(
+      "MJ_NO_CRUD: Updating paginated display. Client Page: $_clientCurrentPage, Processed count: ${_processedClientSideEntries.length}",
+    );
+
+    int startIndex = (_clientCurrentPage - 1) * _clientPageSize;
+    int endIndex = startIndex + _clientPageSize;
+
+    if (startIndex >= _processedClientSideEntries.length) {
+      // This means we are trying to display a page beyond the available filtered data
+      _filteredEntries =
+          (_clientCurrentPage == 1)
+              ? []
+              : List.from(
+                _filteredEntries,
+              ); // Keep existing if not first page but no new items
+      _clientHasMoreDataToDisplay = false;
+    } else {
+      if (endIndex > _processedClientSideEntries.length) {
+        endIndex = _processedClientSideEntries.length;
+      }
+      if (_clientCurrentPage == 1) {
+        // For the first page or after a filter/sort reset
+        _filteredEntries = _processedClientSideEntries.sublist(
+          startIndex,
+          endIndex,
+        );
+      } else {
+        // For "Load More", append
+        _filteredEntries.addAll(
+          _processedClientSideEntries.sublist(startIndex, endIndex),
+        );
+      }
+      _clientHasMoreDataToDisplay =
+          endIndex < _processedClientSideEntries.length;
+    }
+    print(
+      "MJ_NO_CRUD: Displaying ${_filteredEntries.length} items. Client has more: $_clientHasMoreDataToDisplay",
+    );
+    // setState is called by the methods that call this if direct UI update is needed
+  }
+
+  void _loadMoreClientSide() {
+    if (!mounted || !_clientHasMoreDataToDisplay || _isLoadingApi) return;
+    print(
+      "MJ_NO_CRUD: Loading more client side. Next client page will be: ${_clientCurrentPage + 1}",
+    );
+    setState(() {
+      _clientCurrentPage++;
+      _updatePaginatedDisplay(); // This will append the next slice
+    });
+  }
+
+  // Action Handlers (Simplified - No Edit/Delete for this version)
+  void _viewEntry(MemorialJournalEntry entry) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ViewMemorialJournalEntryPage(entryId: entry.id),
+      ),
+    );
+  }
+
+  void _navigateToAddPage() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AddMemorialJournalEntryPage()),
+    );
+    if (result == true && mounted) {
+      _fetchApiDataAndProcessClientSide();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    print(
+      "MJ_NO_CRUD: build - _isLoadingApi: $_isLoadingApi, _filteredEntries.length: ${_filteredEntries.length}, _error: $_error",
+    );
     return Scaffold(
       appBar: AppBar(
-        title: Text('Memorial Journal'),
+        title: Text('Memorial Journal (Client Filter)'),
         actions: [
           IconButton(
             icon: Icon(Icons.refresh),
             tooltip: 'Refresh Data',
             onPressed:
-                (_isLoading || _isFetchingMore)
+                _isLoadingApi
                     ? null
-                    : () => _fetchJournalEntries(isInitialLoad: true),
+                    : () => _fetchApiDataAndProcessClientSide(),
           ),
         ],
       ),
-      body: _buildBody(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AddMemorialJournalEntryPage(),
+      body: Column(
+        children: [
+          Padding(
+            /* ... Search TextField ... */ padding: const EdgeInsets.fromLTRB(
+              12.0,
+              12.0,
+              12.0,
+              0,
             ),
-          ).then((value) {
-            if (value == true) {
-              _fetchJournalEntries(isInitialLoad: true);
-            }
-          });
-        },
-        tooltip: 'Add New Entry',
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Search by Trans. No or Description',
+                hintText: 'Enter search term...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                suffixIcon:
+                    _searchController.text.isNotEmpty
+                        ? IconButton(
+                          icon: Icon(Icons.clear),
+                          onPressed: () {
+                            _searchController.clear();
+                            _activeServerSearchQuery = '';
+                            _fetchApiDataAndProcessClientSide();
+                          },
+                        )
+                        : null,
+              ),
+            ),
+          ),
+          _buildDateFilterControls(),
+          Expanded(child: _buildDataArea()),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _navigateToAddPage,
+        tooltip: 'Add Memorial Journal',
         child: Icon(Icons.add),
-        backgroundColor: Theme.of(context).primaryColor,
       ),
     );
   }
 
-  Widget _buildBody() {
-    if (_isLoading) {
-      return Center(child: CircularProgressIndicator());
-    }
-    if (_error != null && _allEntries.isEmpty) {
-      return _buildErrorWidget(_error!);
-    }
-    return Column(
-      children: [
-        _buildDateFilterRow(context),
-        if (_error != null && _allEntries.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: 8.0,
-              horizontal: 16.0,
-            ),
-            child: Text(
-              "Error loading more: $_error",
-              style: TextStyle(color: Colors.red),
-            ),
-          ),
-        Expanded(
-          child: ListView(
-            children: [_buildDataTable(), _buildPaginationControls()],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDateFilterRow(BuildContext context) {
+  Widget _buildDateFilterControls() {
+    /* ... Date Filter UI ... */
     final DateFormat formatter = DateFormat('dd MMM yyyy');
     final Color primaryColor = Theme.of(context).primaryColor;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
       child: Wrap(
         spacing: 8.0,
         runSpacing: 0.0,
         alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           TextButton.icon(
             style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
@@ -3212,38 +3322,49 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
             onPressed: () => _selectDate(context, false),
           ),
           if (_startDate != null || _endDate != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 4.0),
-              child: ActionChip(
-                avatar: Icon(Icons.clear, size: 16, color: Colors.black54),
-                label: Text(
-                  'Clear Filter',
-                  style: TextStyle(fontSize: 12, color: Colors.black87),
-                ),
-                onPressed: _clearFilter,
-                backgroundColor: Colors.grey[200],
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.symmetric(horizontal: 4.0),
-              ),
+            ActionChip(
+              avatar: Icon(Icons.clear, size: 16),
+              label: Text('Clear Dates'),
+              onPressed: _clearDateFilters,
+              visualDensity: VisualDensity.compact,
             ),
         ],
       ),
     );
   }
 
-  Widget _buildDataTable() {
-    if (_filteredEntries.isEmpty && !_isLoading) {
+  Widget _buildDataArea() {
+    if (_isLoadingApi && _allApiEntriesMaster.isEmpty) {
+      return Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(40.0),
-          child: Text(
-            'No entries found${(_startDate != null || _endDate != null) ? ' for the selected date range' : ''}.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-          ),
+          padding: const EdgeInsets.all(16.0),
+          child: _buildErrorWidget(_error!),
         ),
       );
     }
+    if (_filteredEntries.isEmpty && !_isLoadingApi) {
+      return Center(
+        child: Text(
+          (_activeServerSearchQuery.isNotEmpty ||
+                  _startDate != null ||
+                  _endDate != null)
+              ? 'No entries found for current filters.'
+              : 'No entries to display.',
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      child: Column(
+        children: [_buildDataTable(), _buildPaginationControlsClientSide()],
+      ),
+    );
+  }
+
+  Widget _buildDataTable() {
     final List<DataColumn> columns = [
       DataColumn(
         label: Text('Date'),
@@ -3271,34 +3392,23 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
         tooltip: 'Credit Amount',
         numeric: true,
         onSort: _onSort,
-      ),
-    ];
+      ) /*DataColumn(label: Text('Actions')),*/,
+    ]; // Removed Actions column for simplicity
     final List<DataRow> rows =
         _filteredEntries.map((entry) {
           return DataRow(
             cells: [
-              /* ... DataCell definitions ... */
               DataCell(Text(entry.formattedDate)),
               DataCell(Text(entry.transNo)),
               DataCell(Text(entry.description)),
               DataCell(Text(entry.formattedDebit)),
-              DataCell(Text(entry.formattedCredit)),
+              DataCell(
+                Text(entry.formattedCredit),
+              ) /*DataCell( Row( mainAxisSize: MainAxisSize.min, children: [ IconButton(icon: Icon(Icons.visibility, size:20, color: Colors.grey), tooltip: 'View', onPressed: () => _viewEntry(entry)), ],),),*/,
             ],
-            // --- ADD onSelectChanged to handle row tap ---
-            onSelectChanged: (bool? selected) {
-              if (selected ?? false) {
-                // Ensure it's a tap and not a deselect
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (context) =>
-                            ViewMemorialJournalEntryPage(entryId: entry.id),
-                  ),
-                );
-              }
+            onSelectChanged: (selected) {
+              if (selected ?? false) _viewEntry(entry);
             },
-            // -----------------------------------------------
           );
         }).toList();
     return SingleChildScrollView(
@@ -3308,46 +3418,45 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
         rows: rows,
         sortColumnIndex: _sortColumnIndex,
         sortAscending: _sortAscending,
-        showCheckboxColumn: false,
-        columnSpacing: 20,
-        headingRowHeight: 40,
-        dataRowMinHeight: 48,
-        dataRowMaxHeight: 56,
-        headingTextStyle: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Colors.blueGrey[800],
-        ),
-        headingRowColor: MaterialStateProperty.resolveWith<Color?>(
-          (_) => Colors.blueGrey[50],
-        ),
+        showCheckboxColumn: true,
+        columnSpacing: 15,
       ),
     );
   }
 
-  Widget _buildPaginationControls() {
-    if (_hasMoreData) {
+  Widget _buildPaginationControlsClientSide() {
+    if (_isLoadingApi &&
+        _allApiEntriesMaster.isNotEmpty &&
+        _filteredEntries.length < _processedClientSideEntries.length) {
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_clientHasMoreDataToDisplay && !_isLoadingApi) {
+      // Use the correct flag
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16.0),
         child: Center(
-          child:
-              _isFetchingMore
-                  ? CircularProgressIndicator()
-                  : ElevatedButton(
-                    onPressed: () => _fetchJournalEntries(),
-                    child: Text('Load More'),
-                  ),
+          child: ElevatedButton(
+            onPressed: _loadMoreClientSide, // Corrected call
+            child: Text(
+              'Load More (${_processedClientSideEntries.length - _filteredEntries.length} remaining)',
+            ),
+          ),
         ),
       );
-    } else if (_allEntries.isNotEmpty) {
+    } else if (_allApiEntriesMaster.isNotEmpty &&
+        !_clientHasMoreDataToDisplay &&
+        !_isLoadingApi) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24.0),
+        padding: const EdgeInsets.all(16.0),
         child: Center(
           child: Text("End of list", style: TextStyle(color: Colors.grey)),
         ),
       );
-    } else {
-      return SizedBox.shrink();
     }
+    return SizedBox.shrink();
   }
 
   Widget _buildErrorWidget(String errorMessage) {
@@ -3379,7 +3488,7 @@ class _MemorialJournalPageState extends State<MemorialJournalPage> {
             ElevatedButton.icon(
               icon: Icon(Icons.refresh),
               label: Text('Retry'),
-              onPressed: () => _fetchJournalEntries(isInitialLoad: true),
+              onPressed: () => _fetchApiDataAndProcessClientSide(),
               style: ElevatedButton.styleFrom(
                 foregroundColor: Colors.white,
                 backgroundColor: Theme.of(context).primaryColor,
@@ -3402,103 +3511,123 @@ class SalesJournalPage extends StatefulWidget {
 }
 
 class _SalesJournalPageState extends State<SalesJournalPage> {
-  // --- CORRECTED: Use SalesJournalEntry type ---
-  List<SalesJournalEntry> _allEntries = [];
-  List<SalesJournalEntry> _filteredEntries = [];
-  // ---------------------------------------------
+  List<SalesJournalEntry> _allApiEntriesMaster = [];
+  List<SalesJournalEntry> _processedClientSideEntries = [];
+  List<SalesJournalEntry> _filteredEntries = []; // This is your UI list
 
-  bool _isLoading = true;
-  bool _isFetchingMore = false;
+  bool _isLoadingApi = false;
   String? _error;
+
   DateTime? _startDate;
   DateTime? _endDate;
-  int _currentPage = 1;
-  final int _pageSize = 10;
-  bool _hasMoreData = true;
+
+  final int _clientPageSize = 15;
+  int _clientCurrentPage = 1;
+  bool _clientHasMoreDataToDisplay = false;
+
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
+  String _activeServerSearchQuery = '';
+
   int _sortColumnIndex = 0;
   bool _sortAscending = true;
 
   @override
   void initState() {
     super.initState();
-    _fetchJournalEntries(isInitialLoad: true);
+    print("SalesJournal_Corrected: initState");
+    _fetchApiDataAndProcessClientSide();
+    _searchController.addListener(_onSearchChanged);
   }
 
-  Future<void> _fetchJournalEntries({bool isInitialLoad = false}) async {
-    if (_isFetchingMore || (!isInitialLoad && !_hasMoreData)) return;
-    if (!mounted) return;
-    setState(() {
-      if (isInitialLoad) {
-        _isLoading = true;
-        _currentPage = 1;
-        _allEntries.clear();
-        _filteredEntries.clear();
-        _hasMoreData = true;
-      } else {
-        _isFetchingMore = true;
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      final newSearchQuery = _searchController.text.trim();
+      if (_activeServerSearchQuery != newSearchQuery) {
+        _activeServerSearchQuery = newSearchQuery;
+        _fetchApiDataAndProcessClientSide();
       }
-      _error = null;
     });
-    int pageToFetch = isInitialLoad ? 1 : _currentPage + 1;
+  }
+
+  Future<void> _fetchApiDataAndProcessClientSide() async {
+    if (!mounted || _isLoadingApi) return;
+    print(
+      "SalesJournal_Corrected: Fetching API. Search: '$_activeServerSearchQuery'",
+    );
+    setState(() {
+      _isLoadingApi = true;
+      _error = null;
+      _allApiEntriesMaster.clear();
+      _processedClientSideEntries.clear();
+      _filteredEntries.clear();
+      _clientCurrentPage = 1;
+      _clientHasMoreDataToDisplay = false;
+    });
+
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('auth_token');
-      if (token == null || token.isEmpty) {
+      if (token == null || token.isEmpty)
         throw Exception('Authentication required.');
-      }
-      // --- Use Sales endpoint: getdataJPJ ---
+      var queryParams = {
+        if (_activeServerSearchQuery.isNotEmpty)
+          'search': _activeServerSearchQuery,
+      };
       final url = Uri.parse(
-        '$baseUrl/api/API/getdataJPN?page=$pageToFetch&pageSize=$_pageSize',
-      );
+        '$baseUrl/api/API/getdataJPN',
+      ) // Sales Journal Endpoint
+      .replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
       final headers = {
         'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': 'Bearer $token',
       };
+      print("SalesJournal_Corrected: Fetching API URL: $url");
       final response = await http
           .get(url, headers: headers)
           .timeout(Duration(seconds: 45));
+
       if (!mounted) return;
       if (response.statusCode == 200) {
+        print("SalesJournal_Corrected: API success (200)");
         final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
-        // --- CORRECTED: Map to SalesJournalEntry ---
-        final List<SalesJournalEntry> newEntries =
+        _allApiEntriesMaster =
             data
                 .map((jsonItem) => SalesJournalEntry.fromJson(jsonItem))
-                .toList();
-        // ------------------------------------------
-        if (newEntries.length < _pageSize) {
-          _hasMoreData = false;
-        }
-        _allEntries.addAll(newEntries);
-        _currentPage = pageToFetch;
-        _applyFilter();
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        throw Exception(
-          'Session expired or unauthorized (Code: ${response.statusCode}).',
+                .toList(); // Use SalesJournalEntry.fromJson
+        print(
+          "SalesJournal_Corrected: Fetched ${_allApiEntriesMaster.length} total entries.",
         );
+        _applyClientFiltersAndSortAndPaginate();
       } else {
         throw Exception(
-          'Failed to load data. Status Code: ${response.statusCode}\nBody: ${response.body}',
+          'Failed to load sales entries. Status: ${response.statusCode}',
         );
       }
-    } on TimeoutException catch (e) {
-      _error = e.message ?? "Request timed out.";
-    } on http.ClientException catch (e) {
-      _error = "Network error: ${e.message}.";
-    } catch (e) {
-      print("Error fetching Sales Journal (Page $pageToFetch): $e");
-      _error = "An unexpected error occurred: ${e.toString()}";
-    } finally {
-      if (mounted) {
+    } catch (e, s) {
+      print("SalesJournal_Corrected: EXCEPTION in _fetch: $e\n$s");
+      if (mounted)
         setState(() {
-          _isLoading = false;
-          _isFetchingMore = false;
+          _error = e.toString();
         });
-      }
+    } finally {
+      if (mounted)
+        setState(() {
+          _isLoadingApi = false;
+        });
     }
   }
 
-  // --- Filtering/Clearing (No change needed conceptually, types are now correct) ---
   Future<void> _selectDate(BuildContext context, bool isStartDate) async {
     final DateTime initial =
         (isStartDate ? _startDate : _endDate) ?? DateTime.now();
@@ -3523,48 +3652,41 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
             999,
           );
         }
-        _applyFilter();
       });
+      _applyClientFiltersAndSortAndPaginate();
     }
   }
 
-  void _applyFilter() {
-    if (!mounted) return;
-    setState(() {
-      _filteredEntries =
-          _allEntries.where((entry) {
-            bool passesStartDate =
-                _startDate == null || !entry.transDate.isBefore(_startDate!);
-            bool passesEndDate =
-                _endDate == null || !entry.transDate.isAfter(_endDate!);
-            return passesStartDate && passesEndDate;
-          }).toList();
-      _applySort();
-    });
-  }
-
   void _clearFilter() {
+    // This is your original clear for date filters
     if (!mounted) return;
     setState(() {
       _startDate = null;
       _endDate = null;
-      _filteredEntries = List.from(_allEntries);
-      _applySort();
     });
+    _applyClientFiltersAndSortAndPaginate();
   }
 
-  void _onSort(int columnIndex, bool ascending) {
+  void _applyClientFiltersAndSortAndPaginate() {
     if (!mounted) return;
-    setState(() {
-      _sortColumnIndex = columnIndex;
-      _sortAscending = ascending;
-      _applySort();
-    });
-  }
+    print(
+      "SalesJournal_Corrected: Applying client filters, sort, and paginate.",
+    );
 
-  // --- CORRECTED Sort Logic for SalesJournalEntry ---
-  void _applySort() {
-    _filteredEntries.sort((a, b) {
+    List<SalesJournalEntry> dateFilteredList =
+        _allApiEntriesMaster.where((entry) {
+          bool passesStartDate =
+              _startDate == null || !entry.transDate.isBefore(_startDate!);
+          bool passesEndDate =
+              _endDate == null || !entry.transDate.isAfter(_endDate!);
+          return passesStartDate && passesEndDate;
+        }).toList();
+    print(
+      "SalesJournal_Corrected: After date filter: ${dateFilteredList.length} entries.",
+    );
+
+    // Sort the dateFilteredList
+    dateFilteredList.sort((a, b) {
       int compareResult = 0;
       switch (_sortColumnIndex) {
         case 0:
@@ -3574,25 +3696,107 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
           compareResult = a.transNo.compareTo(b.transNo);
           break;
         case 2:
-          compareResult = a.description.compareTo(b.description);
+          compareResult = a.description.toLowerCase().compareTo(
+            b.description.toLowerCase(),
+          );
           break;
-        // --- Use Sales fields: debit and credit ---
+        // --- CORRECTED: Use Value and ValueDisc for sorting as per SalesJournalEntry model ---
         case 3:
-          compareResult = a.formattedValue.compareTo(b.formattedValue);
+          compareResult = a.Value.compareTo(b.Value);
           break;
         case 4:
-          compareResult = a.formattedValueDisc.compareTo(b.formattedValueDisc);
+          compareResult = a.ValueDisc.compareTo(b.ValueDisc);
           break;
+        // ------------------------------------------------------------------------------------
       }
       return _sortAscending ? compareResult : -compareResult;
     });
+    _processedClientSideEntries = dateFilteredList;
+    print(
+      "SalesJournal_Corrected: After sort: ${_processedClientSideEntries.length} entries.",
+    );
+
+    setState(() {
+      _clientCurrentPage = 1;
+      _updatePaginatedUiList();
+    });
   }
-  // -----------------------------------------------
+
+  void _onSort(int columnIndex, bool ascending) {
+    if (!mounted) return;
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applyClientFiltersAndSortAndPaginate();
+    });
+  }
+
+  void _updatePaginatedUiList() {
+    if (!mounted) return;
+    print(
+      "SalesJournal_Corrected: Updating paginated display. Client Page: $_clientCurrentPage, Processed: ${_processedClientSideEntries.length}",
+    );
+
+    int startIndex = (_clientCurrentPage - 1) * _clientPageSize;
+    int endIndex = startIndex + _clientPageSize;
+
+    List<SalesJournalEntry> nextPageItems = [];
+
+    if (startIndex < _processedClientSideEntries.length) {
+      if (endIndex > _processedClientSideEntries.length) {
+        endIndex = _processedClientSideEntries.length;
+      }
+      nextPageItems = _processedClientSideEntries.sublist(startIndex, endIndex);
+    }
+
+    setState(() {
+      // This setState updates the UI list
+      if (_clientCurrentPage == 1) {
+        _filteredEntries = nextPageItems;
+      } else {
+        _filteredEntries.addAll(nextPageItems);
+      }
+      _clientHasMoreDataToDisplay =
+          endIndex < _processedClientSideEntries.length;
+      print(
+        "SalesJournal_Corrected: Displaying ${_filteredEntries.length}. Client has more: $_clientHasMoreDataToDisplay",
+      );
+    });
+  }
+
+  void _loadMoreClientSide() {
+    if (!mounted || !_clientHasMoreDataToDisplay || _isLoadingApi) return;
+    print(
+      "SalesJournal_Corrected: Loading more. Next client page will be: ${_clientCurrentPage + 1}",
+    );
+    // _clientCurrentPage is incremented *before* calling _updatePaginatedUiList
+    _clientCurrentPage++;
+    _updatePaginatedUiList(); // This will append the next slice
+  }
+
+  // Action Handlers
+  void _viewEntry(SalesJournalEntry entry) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ViewSalesJournalEntryPage(entryId: entry.id),
+      ),
+    );
+  }
+
+  void _navigateToAddPage() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AddSalesJournalEntryPage()),
+    );
+    if (result == true && mounted) {
+      _fetchApiDataAndProcessClientSide();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // --- CORRECTED Title ---
       appBar: AppBar(
         title: Text('Sales Journal'),
         actions: [
@@ -3600,75 +3804,61 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
             icon: Icon(Icons.refresh),
             tooltip: 'Refresh Data',
             onPressed:
-                (_isLoading || _isFetchingMore)
+                _isLoadingApi
                     ? null
-                    : () => _fetchJournalEntries(isInitialLoad: true),
+                    : () => _fetchApiDataAndProcessClientSide(),
           ),
         ],
       ),
-      body: _buildBody(),
-      // --- CORRECTED FAB for Sales ---
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AddSalesJournalEntryPage(),
-            ), // Navigate to Add Sales page
-          ).then((value) {
-            if (value == true) {
-              _fetchJournalEntries(isInitialLoad: true);
-            }
-          });
-        },
-        tooltip: 'Add New Sales Entry', // Correct tooltip
-        child: Icon(Icons.add_shopping_cart), // Maybe different icon?
-        backgroundColor: Colors.green, // Use theme color or specific color
-      ),
-      // -------------------------------
-    );
-  }
-
-  Widget _buildBody() {
-    if (_isLoading) {
-      return Center(child: CircularProgressIndicator());
-    }
-    if (_error != null && _allEntries.isEmpty) {
-      return _buildErrorWidget(_error!);
-    }
-    return Column(
-      children: [
-        _buildDateFilterRow(context),
-        if (_error != null && _allEntries.isNotEmpty)
+      body: Column(
+        children: [
           Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: 8.0,
-              horizontal: 16.0,
-            ),
-            child: Text(
-              "Error loading more: $_error",
-              style: TextStyle(color: Colors.red),
+            padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Search by Trans. No or Description',
+                hintText: 'Enter search term...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                suffixIcon:
+                    _searchController.text.isNotEmpty
+                        ? IconButton(
+                          icon: Icon(Icons.clear),
+                          onPressed: () {
+                            _searchController.clear();
+                            _activeServerSearchQuery = '';
+                            _fetchApiDataAndProcessClientSide();
+                          },
+                        )
+                        : null,
+              ),
             ),
           ),
-        Expanded(
-          child: ListView(
-            children: [_buildDataTable(), _buildPaginationControls()],
-          ),
-        ),
-      ],
+          _buildDateFilterControls(),
+          Expanded(child: _buildDataArea()),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _navigateToAddPage,
+        tooltip: 'Add Sales Journal',
+        child: Icon(Icons.add_shopping_cart),
+        backgroundColor: Colors.green,
+      ),
     );
   }
 
-  Widget _buildDateFilterRow(BuildContext context) {
+  Widget _buildDateFilterControls() {
     final DateFormat formatter = DateFormat('dd MMM yyyy');
     final Color primaryColor = Theme.of(context).primaryColor;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
       child: Wrap(
         spacing: 8.0,
         runSpacing: 0.0,
         alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           TextButton.icon(
             style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
@@ -3689,40 +3879,49 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
             onPressed: () => _selectDate(context, false),
           ),
           if (_startDate != null || _endDate != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 4.0),
-              child: ActionChip(
-                avatar: Icon(Icons.clear, size: 16, color: Colors.black54),
-                label: Text(
-                  'Clear Filter',
-                  style: TextStyle(fontSize: 12, color: Colors.black87),
-                ),
-                onPressed: _clearFilter,
-                backgroundColor: Colors.grey[200],
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.symmetric(horizontal: 4.0),
-              ),
+            ActionChip(
+              avatar: Icon(Icons.clear, size: 16),
+              label: Text('Clear Dates'),
+              onPressed: _clearFilter,
+              visualDensity: VisualDensity.compact,
             ),
         ],
       ),
     );
   }
 
-  // --- CORRECTED DataTable for SalesJournalEntry ---
-  Widget _buildDataTable() {
-    if (_filteredEntries.isEmpty && !_isLoading) {
+  Widget _buildDataArea() {
+    if (_isLoadingApi && _allApiEntriesMaster.isEmpty) {
+      return Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(40.0),
-          child: Text(
-            'No entries found${(_startDate != null || _endDate != null) ? ' for the selected date range' : ''}.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-          ),
+          padding: const EdgeInsets.all(16.0),
+          child: _buildErrorWidget(_error!),
         ),
       );
     }
-    // --- Adjust Column Headers ---
+    if (_filteredEntries.isEmpty && !_isLoadingApi) {
+      return Center(
+        child: Text(
+          (_activeServerSearchQuery.isNotEmpty ||
+                  _startDate != null ||
+                  _endDate != null)
+              ? 'No entries found for current filters.'
+              : 'No entries to display.',
+        ),
+      );
+    }
+    return SingleChildScrollView(
+      child: Column(
+        children: [_buildDataTable(), _buildPaginationControlsClientSide()],
+      ),
+    );
+  }
+
+  Widget _buildDataTable() {
+    // --- CORRECTED: Use SalesJournalEntry fields for columns and cells ---
     final List<DataColumn> columns = [
       DataColumn(
         label: Text('Date'),
@@ -3741,19 +3940,18 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
       ),
       DataColumn(
         label: Text('Value'),
-        tooltip: 'Debit Amount',
+        tooltip: 'Transaction Value',
         numeric: true,
         onSort: _onSort,
-      ), // Header uses 'Debit'
+      ), // Corrected Header
       DataColumn(
-        label: Text('Value Disc'),
-        tooltip: 'Credit Amount',
+        label: Text('Discount'),
+        tooltip: 'Discount Value',
         numeric: true,
         onSort: _onSort,
-      ), // Header uses 'Credit'
-      // You might add columns for discount amounts if needed
+      ), // Corrected Header
+      // DataColumn(label: Text('Actions')), // Removed actions as per request
     ];
-    // --- Map to correct fields for display ---
     final List<DataRow> rows =
         _filteredEntries.map((entry) {
           return DataRow(
@@ -3761,25 +3959,20 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
               DataCell(Text(entry.formattedDate)),
               DataCell(Text(entry.transNo)),
               DataCell(Text(entry.description)),
-              DataCell(Text(entry.formattedValue)), // Use formattedDebit
-              DataCell(Text(entry.formattedValueDisc)), // Use formattedCredit
+              DataCell(
+                Text(entry.formattedValue),
+              ), // Corrected: Use formattedValue
+              DataCell(
+                Text(entry.formattedValueDisc),
+              ), // Corrected: Use formattedValueDisc
+              // DataCell(Text("View")), // Placeholder for actions if needed later
             ],
-            onSelectChanged: (bool? selected) {
-              if (selected ?? false) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (context) => ViewSalesJournalEntryPage(
-                          entryId: entry.id,
-                        ), // Pass ID
-                  ),
-                );
-              }
+            onSelectChanged: (selected) {
+              if (selected ?? false) _viewEntry(entry);
             },
           );
         }).toList();
-    // -----------------------------------------
+    // -------------------------------------------------------------------
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
@@ -3787,47 +3980,44 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
         rows: rows,
         sortColumnIndex: _sortColumnIndex,
         sortAscending: _sortAscending,
-        showCheckboxColumn: false,
-        columnSpacing: 20,
-        headingRowHeight: 40,
-        dataRowMinHeight: 48,
-        dataRowMaxHeight: 56,
-        headingTextStyle: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Colors.blueGrey[800],
-        ),
-        headingRowColor: MaterialStateProperty.resolveWith<Color?>(
-          (_) => Colors.blueGrey[50],
-        ),
+        showCheckboxColumn: true,
+        columnSpacing: 15,
       ),
     );
   }
-  // -----------------------------------------
 
-  Widget _buildPaginationControls() {
-    if (_hasMoreData) {
+  Widget _buildPaginationControlsClientSide() {
+    if (_isLoadingApi &&
+        _allApiEntriesMaster.isNotEmpty &&
+        _filteredEntries.length < _processedClientSideEntries.length) {
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_clientHasMoreDataToDisplay && !_isLoadingApi) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16.0),
         child: Center(
-          child:
-              _isFetchingMore
-                  ? CircularProgressIndicator()
-                  : ElevatedButton(
-                    onPressed: () => _fetchJournalEntries(),
-                    child: Text('Load More'),
-                  ),
+          child: ElevatedButton(
+            onPressed: _loadMoreClientSide,
+            child: Text(
+              'Load More (${_processedClientSideEntries.length - _filteredEntries.length} remaining)',
+            ), // Show remaining from processed list
+          ),
         ),
       );
-    } else if (_allEntries.isNotEmpty) {
+    } else if (_allApiEntriesMaster.isNotEmpty &&
+        !_clientHasMoreDataToDisplay &&
+        !_isLoadingApi) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24.0),
+        padding: const EdgeInsets.all(16.0),
         child: Center(
           child: Text("End of list", style: TextStyle(color: Colors.grey)),
         ),
       );
-    } else {
-      return SizedBox.shrink();
     }
+    return SizedBox.shrink();
   }
 
   Widget _buildErrorWidget(String errorMessage) {
@@ -3859,7 +4049,7 @@ class _SalesJournalPageState extends State<SalesJournalPage> {
             ElevatedButton.icon(
               icon: Icon(Icons.refresh),
               label: Text('Retry'),
-              onPressed: () => _fetchJournalEntries(isInitialLoad: true),
+              onPressed: () => _fetchApiDataAndProcessClientSide(),
               style: ElevatedButton.styleFrom(
                 foregroundColor: Colors.white,
                 backgroundColor: Theme.of(context).primaryColor,
@@ -3878,92 +4068,141 @@ class PurchasingJournalPage extends StatefulWidget {
 }
 
 class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
-  List<PurchaseJournalEntry> _allEntries = [];
-  List<PurchaseJournalEntry> _filteredEntries = [];
-  bool _isLoading = true;
-  bool _isFetchingMore = false;
+  List<PurchaseJournalEntry> _allEntries =
+      []; // This will now be the MASTER list from API
+  List<PurchaseJournalEntry> _processedForDisplay =
+      []; // List after date filter & sort on _allEntries
+  List<PurchaseJournalEntry> _filteredEntries =
+      []; // Your UI List: Paginated subset of _processedForDisplay
+
+  bool _isLoading = true; // Main loading for API fetch
+  // _isFetchingMore is not strictly needed for client-side pagination button,
+  // but we can use _isLoading to disable the button during any processing.
   String? _error;
+
+  // Date Filters
   DateTime? _startDate;
   DateTime? _endDate;
+
+  // Client-side pagination state
+  // _currentPage will now refer to the client-side page of _processedForDisplay
   int _currentPage = 1;
-  final int _pageSize = 10;
-  bool _hasMoreData = true;
+  final int _pageSize = 15; // Your original _pageSize, now for client-side view
+  bool _hasMoreData =
+      false; // For client-side: if _processedForDisplay has more items
+
+  // Search (Server-side, if API supports it)
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
+  String _activeServerSearchQuery = '';
+
+  // Sorting
   int _sortColumnIndex = 0;
   bool _sortAscending = true;
+
   @override
   void initState() {
     super.initState();
-    _fetchJournalEntries(isInitialLoad: true);
+    print("PurchaseJournal_ClientSide_YourStruct: initState");
+    _fetchJournalEntriesFromServer(
+      isFullRefresh: true,
+    ); // Changed name for clarity
+    _searchController.addListener(_onSearchChanged);
   }
 
-  Future<void> _fetchJournalEntries({bool isInitialLoad = false}) async {
-    if (_isFetchingMore || (!isInitialLoad && !_hasMoreData)) return;
-    if (!mounted) return;
-    setState(() {
-      if (isInitialLoad) {
-        _isLoading = true;
-        _currentPage = 1;
-        _allEntries.clear();
-        _filteredEntries.clear();
-        _hasMoreData = true;
-      } else {
-        _isFetchingMore = true;
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      final newSearchQuery = _searchController.text.trim();
+      if (_activeServerSearchQuery != newSearchQuery) {
+        _activeServerSearchQuery = newSearchQuery;
+        _fetchJournalEntriesFromServer(isFullRefresh: true);
       }
-      _error = null;
     });
-    int pageToFetch = isInitialLoad ? 1 : _currentPage + 1;
+  }
+
+  // Renamed your original _fetchJournalEntries to clarify it fetches ALL from server
+  Future<void> _fetchJournalEntriesFromServer({
+    required bool isFullRefresh,
+  }) async {
+    if (!mounted || (_isLoading && !isFullRefresh)) return;
+    print(
+      "PurchaseJournal_ClientSide_YourStruct: Fetching ALL from API. Refresh: $isFullRefresh, Search: '$_activeServerSearchQuery'",
+    );
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      if (isFullRefresh) {
+        _allEntries.clear(); // Clear the master API list
+        _processedForDisplay.clear();
+        _filteredEntries.clear(); // Clear the UI list
+        _currentPage = 1; // Reset client-side page
+        _hasMoreData = false; // Will be set by _updatePaginatedUiList
+      }
+      // _isFetchingMore = false; // Not needed if using single _isLoading
+    });
+
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('auth_token');
-      if (token == null || token.isEmpty) {
+      if (token == null || token.isEmpty)
         throw Exception('Authentication required.');
-      }
+      var queryParams = {
+        if (_activeServerSearchQuery.isNotEmpty)
+          'search': _activeServerSearchQuery,
+      };
       final url = Uri.parse(
-        '$baseUrl/api/API/getdataJPB?page=$pageToFetch&pageSize=$_pageSize',
-      );
+        '$baseUrl/api/API/getdataJPB',
+      ) // Purchase Journal Endpoint
+      .replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
       final headers = {
         'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': 'Bearer $token',
       };
+      print("PurchaseJournal_ClientSide_YourStruct: Fetching API URL: $url");
       final response = await http
           .get(url, headers: headers)
           .timeout(Duration(seconds: 45));
+
       if (!mounted) return;
       if (response.statusCode == 200) {
+        print("PurchaseJournal_ClientSide_YourStruct: API success (200)");
         final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
-        final List<PurchaseJournalEntry> newEntries =
+        _allEntries =
             data
                 .map((jsonItem) => PurchaseJournalEntry.fromJson(jsonItem))
                 .toList();
-        if (newEntries.length < _pageSize) {
-          _hasMoreData = false;
-        }
-        _allEntries.addAll(newEntries);
-        _currentPage = pageToFetch;
-        _applyFilter();
-      } else if (response.statusCode == 401 || response.statusCode == 403) {
-        throw Exception(
-          'Session expired or unauthorized (Code: ${response.statusCode}).',
+        print(
+          "PurchaseJournal_ClientSide_YourStruct: Fetched ${_allEntries.length} total entries from API.",
         );
+        _applyFilter(); // This will now apply client filters, sort, and set up first page display
       } else {
         throw Exception(
-          'Failed to load data. Status Code: ${response.statusCode}\nBody: ${response.body}',
+          'Failed to load purchase entries. Status: ${response.statusCode}',
         );
       }
-    } on TimeoutException catch (e) {
-      _error = e.message ?? "Request timed out.";
-    } on http.ClientException catch (e) {
-      _error = "Network error: ${e.message}.";
-    } catch (e) {
-      print("Error (Page $pageToFetch): $e");
-      _error = "An unexpected error occurred: ${e.toString()}";
-    } finally {
-      if (mounted) {
+    } catch (e, s) {
+      print(
+        "PurchaseJournal_ClientSide_YourStruct: EXCEPTION in _fetch: $e\n$s",
+      );
+      if (mounted)
         setState(() {
-          _isLoading = false;
-          _isFetchingMore = false;
+          _error = e.toString();
         });
-      }
+    } finally {
+      if (mounted)
+        setState(() {
+          _isLoading = false; /* _isFetchingMore = false; */
+        });
     }
   }
 
@@ -3978,6 +4217,7 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
     );
     if (picked != null && mounted) {
       setState(() {
+        // Set the date filter state
         if (isStartDate) {
           _startDate = picked;
         } else {
@@ -3991,48 +4231,43 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
             999,
           );
         }
-        _applyFilter();
       });
+      _applyFilter(); // Re-process the _allEntries list
     }
   }
 
-  void _applyFilter() {
-    if (!mounted) return;
-    setState(() {
-      _filteredEntries =
-          _allEntries.where((entry) {
-            bool passesStartDate =
-                _startDate == null || !entry.transDate.isBefore(_startDate!);
-            bool passesEndDate =
-                _endDate == null || !entry.transDate.isAfter(_endDate!);
-            return passesStartDate && passesEndDate;
-          }).toList();
-      _applySort();
-    });
-  }
-
   void _clearFilter() {
+    // Your original _clearFilter
     if (!mounted) return;
     setState(() {
       _startDate = null;
       _endDate = null;
-      _filteredEntries = List.from(_allEntries);
-      _applySort();
     });
+    _applyFilter(); // Re-process the _allEntries list
   }
 
-  void _onSort(int columnIndex, bool ascending) {
+  // _applyFilter now processes _allEntries, sorts, and sets up the first client-side page
+  void _applyFilter() {
     if (!mounted) return;
-    setState(() {
-      _sortColumnIndex = columnIndex;
-      _sortAscending = ascending;
-      _applySort();
-    });
-  }
+    print(
+      "PurchaseJournal_ClientSide_YourStruct: Applying client filters and sort.",
+    );
 
-  // --- CORRECTED Sort Logic for PurchaseJournalEntry ---
-  void _applySort() {
-    _filteredEntries.sort((a, b) {
+    // 1. Start with all entries fetched from API
+    List<PurchaseJournalEntry> dateFilteredList =
+        _allEntries.where((entry) {
+          bool passesStartDate =
+              _startDate == null || !entry.transDate.isBefore(_startDate!);
+          bool passesEndDate =
+              _endDate == null || !entry.transDate.isAfter(_endDate!);
+          return passesStartDate && passesEndDate;
+        }).toList();
+    print(
+      "PurchaseJournal_ClientSide_YourStruct: After date filter: ${dateFilteredList.length} entries.",
+    );
+
+    // 2. Sort the dateFilteredList (your original _applySort logic is here)
+    dateFilteredList.sort((a, b) {
       int compareResult = 0;
       switch (_sortColumnIndex) {
         case 0:
@@ -4042,9 +4277,10 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
           compareResult = a.transNo.compareTo(b.transNo);
           break;
         case 2:
-          compareResult = a.description.compareTo(b.description);
+          compareResult = a.description.toLowerCase().compareTo(
+            b.description.toLowerCase(),
+          );
           break;
-        // --- Use Purchase fields: Value and ValueDisc ---
         case 3:
           compareResult = a.Value.compareTo(b.Value);
           break;
@@ -4054,10 +4290,102 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
       }
       return _sortAscending ? compareResult : -compareResult;
     });
+    _processedForDisplay =
+        dateFilteredList; // Store the fully client-processed list
+    print(
+      "PurchaseJournal_ClientSide_YourStruct: After sort: ${_processedForDisplay.length} entries.",
+    );
+
+    // 3. Reset client-side pagination and display the first "page" of _processedForDisplay
+    setState(() {
+      _currentPage = 1; // Reset to page 1 of the NEWLY processed list
+      _updatePaginatedUiList(); // Update _filteredEntries (UI list)
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    if (!mounted) return;
+    setState(() {
+      // For UI sort indicator update
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+      _applyFilter(); // Re-apply filters which will also re-sort and reset pagination
+    });
+  }
+
+  // Updates _filteredEntries (your UI list) based on _processedForDisplay and _currentPage
+  void _updatePaginatedUiList() {
+    if (!mounted) return;
+    print(
+      "PurchaseJournal_ClientSide_YourStruct: Updating paginated display. Client Page: $_currentPage, Processed count: ${_processedForDisplay.length}",
+    );
+
+    int startIndex =
+        (_currentPage - 1) * _pageSize; // Use _pageSize for client-side view
+    int endIndex = startIndex + _pageSize;
+
+    List<PurchaseJournalEntry> nextPageItems = [];
+
+    if (startIndex < _processedForDisplay.length) {
+      if (endIndex > _processedForDisplay.length) {
+        endIndex = _processedForDisplay.length;
+      }
+      nextPageItems = _processedForDisplay.sublist(startIndex, endIndex);
+    }
+
+    // This logic ensures correct append vs. replace for _filteredEntries
+    // If _currentPage is 1, it means we are displaying the first page (after filter/sort/initial)
+    // If _currentPage > 1, it means "Load More" was pressed, so we append.
+    if (_currentPage == 1) {
+      _filteredEntries = nextPageItems;
+    } else {
+      _filteredEntries.addAll(nextPageItems); // Append for "Load More"
+    }
+    _hasMoreData = endIndex < _processedForDisplay.length;
+
+    print(
+      "PurchaseJournal_ClientSide_YourStruct: Displaying ${_filteredEntries.length} items. Client has more: $_hasMoreData",
+    );
+    // setState is called by the methods that call this (_applyFilter or _loadMoreClientSide)
+  }
+
+  void _loadMoreClientSide() {
+    // New function for "Load More" button
+    if (!mounted || !_hasMoreData || _isLoading) return;
+    print(
+      "PurchaseJournal_ClientSide_YourStruct: Loading more client side. Next client page will be: ${_currentPage + 1}",
+    );
+    setState(() {
+      _currentPage++; // Increment the client-side page we want to display up to
+      _updatePaginatedUiList(); // This will append the next slice to _filteredEntries
+    });
+  }
+
+  // Action Handlers (View, Add - NO Edit/Delete as requested)
+  void _viewEntry(PurchaseJournalEntry entry) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ViewPurchaseJournalEntryPage(entryId: entry.id),
+      ),
+    );
+  }
+
+  void _navigateToAddPage() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AddPurchaseJournalEntryPage()),
+    );
+    if (result == true && mounted) {
+      _fetchJournalEntriesFromServer(isFullRefresh: true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    print(
+      "PurchaseJournal_ClientSide_YourStruct: build - _isLoading: $_isLoading, _filteredEntries.length: ${_filteredEntries.length}, _error: $_error",
+    );
     return Scaffold(
       appBar: AppBar(
         title: Text('Purchasing Journal'),
@@ -4066,77 +4394,62 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
             icon: Icon(Icons.refresh),
             tooltip: 'Refresh Data',
             onPressed:
-                (_isLoading || _isFetchingMore)
+                _isLoading
                     ? null
-                    : () => _fetchJournalEntries(isInitialLoad: true),
+                    : () => _fetchJournalEntriesFromServer(isFullRefresh: true),
           ),
         ],
       ),
-      body: _buildBody(),
-      // --- TODO: Create AddPurchaseJournalEntryPage ---
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('TODO: Create Add Purchase Page')),
-          );
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AddPurchaseJournalEntryPage(),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Search by Trans. No or Description',
+                hintText: 'Enter search term...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                suffixIcon:
+                    _searchController.text.isNotEmpty
+                        ? IconButton(
+                          icon: Icon(Icons.clear),
+                          onPressed: () {
+                            _searchController.clear();
+                            _activeServerSearchQuery = '';
+                            _fetchJournalEntriesFromServer(isFullRefresh: true);
+                          },
+                        )
+                        : null,
+              ),
             ),
-          ).then((value) {
-            if (value == true) {
-              _fetchJournalEntries(isInitialLoad: true);
-            }
-          });
-        },
-        tooltip: 'Add New Purchase Entry',
+          ),
+          _buildDateFilterControls(), // Using your original method name
+          Expanded(child: _buildBodyDataArea()), // Renamed for clarity
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _navigateToAddPage,
+        tooltip: 'Add Purchase Journal',
         child: Icon(Icons.add),
-        backgroundColor: Theme.of(context).primaryColor,
+        backgroundColor: Colors.orange,
       ),
     );
   }
 
-  Widget _buildBody() {
-    if (_isLoading) {
-      return Center(child: CircularProgressIndicator());
-    }
-    if (_error != null && _allEntries.isEmpty) {
-      return _buildErrorWidget(_error!);
-    }
-    return Column(
-      children: [
-        _buildDateFilterRow(context),
-        if (_error != null && _allEntries.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: 8.0,
-              horizontal: 16.0,
-            ),
-            child: Text(
-              "Error loading more: $_error",
-              style: TextStyle(color: Colors.red),
-            ),
-          ),
-        Expanded(
-          child: ListView(
-            children: [_buildDataTable(), _buildPaginationControls()],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDateFilterRow(BuildContext context) {
+  Widget _buildDateFilterControls() {
+    // Renamed from _buildDateFilterRow
     final DateFormat formatter = DateFormat('dd MMM yyyy');
     final Color primaryColor = Theme.of(context).primaryColor;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
       child: Wrap(
         spacing: 8.0,
         runSpacing: 0.0,
         alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           TextButton.icon(
             style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
@@ -4157,40 +4470,54 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
             onPressed: () => _selectDate(context, false),
           ),
           if (_startDate != null || _endDate != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 4.0),
-              child: ActionChip(
-                avatar: Icon(Icons.clear, size: 16, color: Colors.black54),
-                label: Text(
-                  'Clear Filter',
-                  style: TextStyle(fontSize: 12, color: Colors.black87),
-                ),
-                onPressed: _clearFilter,
-                backgroundColor: Colors.grey[200],
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.symmetric(horizontal: 4.0),
-              ),
+            ActionChip(
+              avatar: Icon(Icons.clear, size: 16),
+              label: Text('Clear Dates'),
+              onPressed: _clearFilter,
+              visualDensity: VisualDensity.compact,
             ),
         ],
       ),
     );
   }
 
-  // --- CORRECTED DataTable for PurchaseJournalEntry ---
-  Widget _buildDataTable() {
-    if (_filteredEntries.isEmpty && !_isLoading) {
+  Widget _buildBodyDataArea() {
+    // Renamed from _buildBody
+    if (_isLoading && _allEntries.isEmpty) {
+      return Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(40.0),
-          child: Text(
-            'No entries found${(_startDate != null || _endDate != null) ? ' for the selected date range' : ''}.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-          ),
+          padding: const EdgeInsets.all(16.0),
+          child: _buildErrorWidget(_error!),
         ),
       );
     }
-    // --- Adjust Column Headers ---
+    if (_filteredEntries.isEmpty && !_isLoading) {
+      return Center(
+        child: Text(
+          (_activeServerSearchQuery.isNotEmpty ||
+                  _startDate != null ||
+                  _endDate != null)
+              ? 'No entries found for current filters.'
+              : 'No entries to display.',
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          _buildDataTable(),
+          _buildPaginationControls(), // Using your original method name
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDataTable() {
+    // Use PurchaseJournalEntry fields for columns and cells
     final List<DataColumn> columns = [
       DataColumn(
         label: Text('Date'),
@@ -4212,15 +4539,14 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
         tooltip: 'Value Amount',
         numeric: true,
         onSort: _onSort,
-      ), // Header uses 'Value'
+      ),
       DataColumn(
         label: Text('Discount'),
         tooltip: 'Discount Amount',
         numeric: true,
         onSort: _onSort,
-      ), // Header uses 'Discount'
-    ];
-    // --- Map to correct fields for display ---
+      ) /*DataColumn(label: Text('Actions')),*/,
+    ]; // Removed Actions for now
     final List<DataRow> rows =
         _filteredEntries.map((entry) {
           return DataRow(
@@ -4228,23 +4554,13 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
               DataCell(Text(entry.formattedDate)),
               DataCell(Text(entry.transNo)),
               DataCell(Text(entry.description)),
-              DataCell(Text(entry.formattedValue)), // Use formattedValue
+              DataCell(Text(entry.formattedValue)),
               DataCell(
                 Text(entry.formattedValueDisc),
-              ), // Use formattedValueDisc
+              ) /*DataCell(Text("View")),*/,
             ],
-            onSelectChanged: (bool? selected) {
-              if (selected ?? false) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (context) => ViewPurchaseJournalEntryPage(
-                          entryId: entry.id,
-                        ), // Pass ID
-                  ),
-                );
-              }
+            onSelectChanged: (selected) {
+              if (selected ?? false) _viewEntry(entry);
             },
           );
         }).toList();
@@ -4255,46 +4571,46 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
         rows: rows,
         sortColumnIndex: _sortColumnIndex,
         sortAscending: _sortAscending,
-        showCheckboxColumn: false,
-        columnSpacing: 20,
-        headingRowHeight: 40,
-        dataRowMinHeight: 48,
-        dataRowMaxHeight: 56,
-        headingTextStyle: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Colors.blueGrey[800],
-        ),
-        headingRowColor: MaterialStateProperty.resolveWith<Color?>(
-          (_) => Colors.blueGrey[50],
-        ),
+        showCheckboxColumn: true,
+        columnSpacing: 15,
       ),
     );
   }
 
   Widget _buildPaginationControls() {
-    if (_hasMoreData) {
+    // Kept your original method name
+    // Show loader if API is fetching (isLoading) AND some data is already displayed (not initial load)
+    if (_isLoading &&
+        _allEntries.isNotEmpty &&
+        _filteredEntries.length < _processedForDisplay.length) {
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_hasMoreData && !_isLoading) {
+      // Use _hasMoreData (client-side flag)
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16.0),
         child: Center(
-          child:
-              _isFetchingMore
-                  ? CircularProgressIndicator()
-                  : ElevatedButton(
-                    onPressed: () => _fetchJournalEntries(),
-                    child: Text('Load More'),
-                  ),
+          child: ElevatedButton(
+            onPressed:
+                _loadMoreClientSide, // Call the new client-side load more
+            child: Text(
+              'Load More (${_processedForDisplay.length - _filteredEntries.length} remaining)',
+            ),
+          ),
         ),
       );
-    } else if (_allEntries.isNotEmpty) {
+    } else if (_allEntries.isNotEmpty && !_hasMoreData && !_isLoading) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24.0),
+        padding: const EdgeInsets.all(16.0),
         child: Center(
           child: Text("End of list", style: TextStyle(color: Colors.grey)),
         ),
       );
-    } else {
-      return SizedBox.shrink();
     }
+    return SizedBox.shrink();
   }
 
   Widget _buildErrorWidget(String errorMessage) {
@@ -4326,7 +4642,8 @@ class _PurchasingJournalPageState extends State<PurchasingJournalPage> {
             ElevatedButton.icon(
               icon: Icon(Icons.refresh),
               label: Text('Retry'),
-              onPressed: () => _fetchJournalEntries(isInitialLoad: true),
+              onPressed:
+                  () => _fetchJournalEntriesFromServer(isFullRefresh: true),
               style: ElevatedButton.styleFrom(
                 foregroundColor: Colors.white,
                 backgroundColor: Theme.of(context).primaryColor,
