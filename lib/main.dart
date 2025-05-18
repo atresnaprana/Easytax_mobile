@@ -7129,45 +7129,39 @@ class _AddAccountSettingPageState extends State<AddAccountSettingPage> {
 // ================================================================
 
 // ================================================================
-// EDIT ACCOUNT SETTING PAGE
+// EDIT ACCOUNT SETTING PAGE (Adjusted for API Specifications - Using POST)
 // ================================================================
 class EditAccountSettingPage extends StatefulWidget {
-  final AccountSettingEntry account; // Account to be edited
-
+  final AccountSettingEntry account;
   const EditAccountSettingPage({Key? key, required this.account})
     : super(key: key);
-
   @override
   _EditAccountSettingPageState createState() => _EditAccountSettingPageState();
 }
 
 class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
+  // ... (formKey, controllers, dropdown state variables, initState, dispose remain the same)
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _accountNoController;
   late TextEditingController _accountNameController;
-
-  // Dropdown values
   String? _selectedHierarchy;
   String? _selectedAkunDK;
   String? _selectedAkunNRLR;
-  String? _selectedFlagAktif; // For active/inactive status
-
+  String? _selectedFlagAktif;
   bool _isSubmitting = false;
   String? _submitError;
-
-  final List<String> _hierarchyOptions = ['HDR', 'DTL'];
-  final List<String> _akunDKOptions = ['D', 'K'];
-  final List<String> _akunNRLROptions = ['NR', 'LR'];
+  final List<String> _hierarchyOptions = ['hdr', 'dtl'];
+  final List<String> _akunDKOptions = ['D', 'K', '-'];
+  final List<String> _akunNRLROptions = ['NR', 'LR', '-'];
   final List<Map<String, String>> _statusOptions = [
-    // For flag_aktif
     {'value': '1', 'display': 'Active'},
     {'value': '0', 'display': 'Inactive'},
   ];
 
   @override
   void initState() {
+    /* ... same ... */
     super.initState();
-    // Initialize controllers and dropdowns with existing account data
     _accountNoController = TextEditingController(
       text: widget.account.accountNo.toString(),
     );
@@ -7178,8 +7172,6 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
     _selectedAkunDK = widget.account.akunDK;
     _selectedAkunNRLR = widget.account.akunNRLR;
     _selectedFlagAktif = widget.account.flagAktif;
-
-    // Ensure selected values are part of the options
     if (!_hierarchyOptions.contains(_selectedHierarchy))
       _selectedHierarchy = null;
     if (!_akunDKOptions.contains(_selectedAkunDK)) _selectedAkunDK = null;
@@ -7193,6 +7185,7 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
 
   @override
   void dispose() {
+    /* ... same ... */
     _accountNoController.dispose();
     _accountNameController.dispose();
     super.dispose();
@@ -7207,13 +7200,12 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Please select all dropdown values.'),
+            content: Text('Please ensure all selections are made.'),
             backgroundColor: Colors.orange,
           ),
         );
       return;
     }
-
     setState(() {
       _isSubmitting = true;
       _submitError = null;
@@ -7225,59 +7217,44 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
       if (token == null || token.isEmpty)
         throw Exception('Authentication required.');
 
-      final int? accountNo = int.tryParse(_accountNoController.text);
-      if (accountNo == null) throw Exception('Invalid Account Number.');
-
       final body = json.encode({
-        "id": widget.account.id, // Include the ID for update
-        "account_no": accountNo,
         "hierarchy": _selectedHierarchy,
         "account_name": _accountNameController.text.trim(),
         "akundk": _selectedAkunDK,
         "akunnrlr": _selectedAkunNRLR,
         "flag_aktif": _selectedFlagAktif,
-        "company_id":
-            widget
-                .account
-                .companyId, // Send back company_id if needed for update
-        // "entry_user": widget.account.entryUser, // Usually not updated
-        // "entry_date": widget.account.entryDate?.toIso8601String(), // Usually not updated
-        // "update_user": "CURRENT_LOGGED_IN_USER", // API should handle this or pass if required
       });
 
-      // --- REPLACE WITH YOUR ACTUAL "UPDATE ACCOUNT" API ENDPOINT ---
-      // It might be a PUT request or POST, often includes ID in path or body
-      final url = Uri.parse(
-        '$baseUrl/api/Admin/UpdateAccount/${widget.account.id}',
-      ); // Example: PUT /api/Admin/UpdateAccount/{id}
-      // OR: final url = Uri.parse('$baseUrl/api/Admin/UpdateAccount'); // If ID is only in body
-
+      final Uri url = Uri.parse(
+        '$baseUrl/api/API/EditAccount',
+      ).replace(queryParameters: {'id': widget.account.id.toString()});
       final headers = {
         'Content-Type': 'application/json; charset=UTF-8',
         'Authorization': 'Bearer $token',
       };
-      print("Updating Account ${widget.account.id}: $body");
+      print(
+        "Updating Account ${widget.account.id} URL: $url with body: $body (Using POST)",
+      );
 
-      // Use http.put or http.post based on your API design
+      // --- **** USE HTTP.POST if that's what your API expects for this endpoint **** ---
       final response = await http
-          .put(url, headers: headers, body: body)
+          .post(url, headers: headers, body: body)
           .timeout(Duration(seconds: 30));
-      // final response = await http.post(url, headers: headers, body: body).timeout(Duration(seconds: 30));
+      // ------------------------------------------------------------------------------------
 
       if (!mounted) return;
       if (response.statusCode == 200 || response.statusCode == 204) {
-        // 204 No Content for successful PUT
-        print("Update Account Success: ${response.body}");
+        // 200 OK or 204 No Content
+        print(
+          "Update Account Success (Status: ${response.statusCode}): ${response.body}",
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Account updated successfully!'),
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(
-          context,
-          true,
-        ); // Pop and signal success to refresh previous page
+        Navigator.pop(context, true);
       } else {
         String serverMessage = response.reasonPhrase ?? 'Update Failed';
         try {
@@ -7311,8 +7288,10 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
     }
   }
 
+  // --- Build Method (No changes needed in UI structure from last version) ---
   @override
   Widget build(BuildContext context) {
+    /* ... same build method ... */
     return Scaffold(
       appBar: AppBar(title: Text('Edit Account: ${widget.account.accountNo}')),
       body: SingleChildScrollView(
@@ -7322,27 +7301,16 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              // --- Account Number (Potentially Read-only or validated for uniqueness if changed) ---
               TextFormField(
                 controller: _accountNoController,
                 decoration: InputDecoration(
-                  labelText: 'Account Number*',
+                  labelText: 'Account Number (Read-only)',
                   border: OutlineInputBorder(),
                 ),
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                // readOnly: true, // Consider if account_no should be editable. If so, API needs to handle potential conflicts.
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty)
-                    return 'Please enter an account number.';
-                  if (int.tryParse(value.trim()) == null)
-                    return 'Please enter a valid number.';
-                  return null;
-                },
+                readOnly: true,
+                style: TextStyle(color: Colors.grey[700]),
               ),
               SizedBox(height: 16),
-
-              // --- Account Name Input ---
               TextFormField(
                 controller: _accountNameController,
                 decoration: InputDecoration(
@@ -7352,13 +7320,11 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
                 textCapitalization: TextCapitalization.words,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty)
-                    return 'Please enter an account name.';
+                    return 'Account name is required.';
                   return null;
                 },
               ),
               SizedBox(height: 16),
-
-              // --- Hierarchy Dropdown ---
               DropdownButtonFormField<String>(
                 value: _selectedHierarchy,
                 decoration: InputDecoration(
@@ -7369,7 +7335,7 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
                     vertical: 16.0,
                   ),
                 ),
-                hint: Text('Select Hierarchy (HDR/DTL)'),
+                hint: Text('Select Hierarchy'),
                 isExpanded: true,
                 items:
                     _hierarchyOptions.map((String value) {
@@ -7388,25 +7354,23 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
                         value == null ? 'Please select hierarchy.' : null,
               ),
               SizedBox(height: 16),
-
-              // --- Akun D/K Dropdown ---
               DropdownButtonFormField<String>(
                 value: _selectedAkunDK,
                 decoration: InputDecoration(
-                  labelText: 'Normal Balance (D/K)*',
+                  labelText: 'Normal Balance (D/K/-)*',
                   border: OutlineInputBorder(),
                   contentPadding: EdgeInsets.symmetric(
                     horizontal: 12.0,
                     vertical: 16.0,
                   ),
                 ),
-                hint: Text('Select D or K'),
+                hint: Text('Select D, K, or -'),
                 isExpanded: true,
                 items:
                     _akunDKOptions.map((String value) {
                       return DropdownMenuItem<String>(
                         value: value,
-                        child: Text(value == 'D' ? 'D - Debit' : 'K - Kredit'),
+                        child: Text(value),
                       );
                     }).toList(),
                 onChanged: (String? newValue) {
@@ -7415,32 +7379,27 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
                   });
                 },
                 validator:
-                    (value) => value == null ? 'Please select D or K.' : null,
+                    (value) =>
+                        value == null ? 'Please select normal balance.' : null,
               ),
               SizedBox(height: 16),
-
-              // --- Akun NR/LR Dropdown ---
               DropdownButtonFormField<String>(
                 value: _selectedAkunNRLR,
                 decoration: InputDecoration(
-                  labelText: 'Account Type (NR/LR)*',
+                  labelText: 'Account Type (NR/LR/-)*',
                   border: OutlineInputBorder(),
                   contentPadding: EdgeInsets.symmetric(
                     horizontal: 12.0,
                     vertical: 16.0,
                   ),
                 ),
-                hint: Text('Select NR or LR'),
+                hint: Text('Select NR, LR, or -'),
                 isExpanded: true,
                 items:
                     _akunNRLROptions.map((String value) {
                       return DropdownMenuItem<String>(
                         value: value,
-                        child: Text(
-                          value == 'NR'
-                              ? 'NR - Neraca (Balance Sheet)'
-                              : 'LR - Laba Rugi (Income St.)',
-                        ),
+                        child: Text(value),
                       );
                     }).toList(),
                 onChanged: (String? newValue) {
@@ -7449,11 +7408,10 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
                   });
                 },
                 validator:
-                    (value) => value == null ? 'Please select NR or LR.' : null,
+                    (value) =>
+                        value == null ? 'Please select account type.' : null,
               ),
               SizedBox(height: 16),
-
-              // --- Flag Aktif Dropdown ---
               DropdownButtonFormField<String>(
                 value: _selectedFlagAktif,
                 decoration: InputDecoration(
@@ -7482,7 +7440,6 @@ class _EditAccountSettingPageState extends State<EditAccountSettingPage> {
                     (value) => value == null ? 'Please select a status.' : null,
               ),
               SizedBox(height: 30),
-
               if (_submitError != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12.0),
