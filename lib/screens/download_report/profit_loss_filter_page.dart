@@ -20,8 +20,11 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
   final _yearController = TextEditingController(
     text: DateTime.now().year.toString(),
   );
+  // Default to the current month. Since it's no longer optional, it must have a value.
   int _selectedMonth = DateTime.now().month;
-  bool _isYearly = true;
+
+  // The _isYearly flag has been removed.
+
   bool _isPreview = true;
   bool _isLoading = false;
   String? _downloadError;
@@ -66,11 +69,14 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
       final String endpointPath =
           _isPreview ? '/api/API/GeneratePreviewLR' : '/api/API/GeneratePdfLR';
       final url = Uri.parse('$baseUrl$endpointPath');
+
+      // REVISED: The body now always includes the selected month and sets isYearly to false.
       final Map<String, dynamic> bodyMap = {
         "year": year,
-        "month": _isYearly ? 0 : _selectedMonth,
-        "isYearly": _isYearly,
+        "month": _selectedMonth,
+        "isYearly": false, // This is now always false.
       };
+
       final String requestBody = json.encode(bodyMap);
       final headers = {
         'Content-Type': 'application/json; charset=UTF-8',
@@ -91,10 +97,9 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
         final tempDir = await getTemporaryDirectory();
         final String reportName = 'Profit & Loss';
         final String previewStatus = _isPreview ? 'Preview' : 'Closed';
-        final String monthString =
-            _isYearly
-                ? "Yearly"
-                : DateFormat('MMM').format(DateTime(0, _selectedMonth));
+        final String monthString = DateFormat(
+          'MMM',
+        ).format(DateTime(0, _selectedMonth));
         final String filename =
             '${reportName.replaceAll(' ', '_').replaceAll('&', 'and')}_${year}_${monthString}_$previewStatus.pdf';
         final File file = File('${tempDir.path}/$filename');
@@ -167,37 +172,34 @@ class _ProfitLossFilterPageState extends State<ProfitLossFilterPage> {
                 },
               ),
               SizedBox(height: 16),
-              SwitchListTile(
-                title: Text('Yearly Report'),
-                value: _isYearly,
-                onChanged: (bool value) => setState(() => _isYearly = value),
-                secondary: Icon(
-                  _isYearly ? Icons.calendar_month : Icons.date_range,
+
+              // REVISED: The SwitchListTile for "Yearly Report" has been removed.
+              // The DropdownButtonFormField for "Month" is now always visible.
+              DropdownButtonFormField<int>(
+                decoration: InputDecoration(
+                  labelText: 'Month',
+                  border: OutlineInputBorder(),
                 ),
-                contentPadding: EdgeInsets.zero,
+                value: _selectedMonth,
+                items:
+                    _months.map((Map<String, dynamic> month) {
+                      return DropdownMenuItem<int>(
+                        value: month['value'],
+                        child: Text(month['name']),
+                      );
+                    }).toList(),
+                onChanged: (int? newValue) {
+                  if (newValue != null)
+                    setState(() => _selectedMonth = newValue);
+                },
+                // Added validator to ensure a month is always selected.
+                validator: (value) {
+                  if (value == null) return 'Please select a month.';
+                  return null;
+                },
               ),
-              SizedBox(height: 8),
-              if (!_isYearly) ...[
-                DropdownButtonFormField<int>(
-                  decoration: InputDecoration(
-                    labelText: 'Month',
-                    border: OutlineInputBorder(),
-                  ),
-                  value: _selectedMonth,
-                  items:
-                      _months.map((Map<String, dynamic> month) {
-                        return DropdownMenuItem<int>(
-                          value: month['value'],
-                          child: Text(month['name']),
-                        );
-                      }).toList(),
-                  onChanged: (int? newValue) {
-                    if (newValue != null)
-                      setState(() => _selectedMonth = newValue);
-                  },
-                ),
-                SizedBox(height: 16),
-              ],
+              SizedBox(height: 16),
+
               SwitchListTile(
                 title: Text('Preview Version'),
                 subtitle: Text(

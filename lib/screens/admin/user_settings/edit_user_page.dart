@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Import for input formatters
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../models/user_model.dart';
@@ -18,8 +19,6 @@ class _EditUserPageState extends State<EditUserPage> {
   late TextEditingController _nameController;
   late TextEditingController _phoneController;
   late TextEditingController _emailController;
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
 
   String? _selectedActiveFlag;
   bool _isSubmitting = false;
@@ -44,18 +43,12 @@ class _EditUserPageState extends State<EditUserPage> {
     _nameController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
     super.dispose();
   }
 
   Future<void> _submitUpdateUser() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_passwordController.text.isNotEmpty &&
-        (_passwordController.text != _confirmPasswordController.text)) {
-      setState(() => _submitError = "New passwords do not match.");
-      return;
-    }
+
     if (_selectedActiveFlag == null) {
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
@@ -78,14 +71,14 @@ class _EditUserPageState extends State<EditUserPage> {
       if (token == null || token.isEmpty)
         throw Exception('Authentication required.');
 
+      // --- CHANGE #1: The 'id' is removed from the bodyMap ---
+      // The API gets the ID from the URL, not the body.
       Map<String, dynamic> bodyMap = {
-        "id": widget.user.id,
         "CUST_NAME": _nameController.text.trim(),
         "PHONE1": _phoneController.text.trim(),
         "Email": _emailController.text.trim().toLowerCase(),
         "flaG_AKTIF": _selectedActiveFlag,
-        if (_passwordController.text.isNotEmpty)
-          "Password": _passwordController.text,
+        // The password field is not sent since it was removed
         "companY_ID": widget.user.companyId,
         "npwp": widget.user.npwp,
         "address": widget.user.address,
@@ -98,8 +91,9 @@ class _EditUserPageState extends State<EditUserPage> {
         'Authorization': 'Bearer $token',
       };
 
+      // --- CHANGE #2: The method is changed from .put to .post ---
       final response = await http
-          .put(url, headers: headers, body: json.encode(bodyMap))
+          .post(url, headers: headers, body: json.encode(bodyMap))
           .timeout(Duration(seconds: 30));
 
       if (!mounted) return;
@@ -158,6 +152,8 @@ class _EditUserPageState extends State<EditUserPage> {
                   labelText: 'Phone Number*',
                   border: OutlineInputBorder(),
                 ),
+                keyboardType: TextInputType.phone,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 validator:
                     (v) =>
                         v!.trim().isEmpty ? 'Phone number is required' : null,
@@ -169,6 +165,7 @@ class _EditUserPageState extends State<EditUserPage> {
                   labelText: 'Email Address*',
                   border: OutlineInputBorder(),
                 ),
+                keyboardType: TextInputType.emailAddress,
                 validator: (v) {
                   if (v!.trim().isEmpty) return 'Email is required';
                   if (!v.contains('@') || !v.contains('.'))
@@ -194,40 +191,6 @@ class _EditUserPageState extends State<EditUserPage> {
                         .toList(),
                 onChanged: (v) => setState(() => _selectedActiveFlag = v),
                 validator: (v) => v == null ? 'Please select a status.' : null,
-              ),
-              SizedBox(height: 24),
-              Text(
-                "Change Password (Optional)",
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              SizedBox(height: 8),
-              TextFormField(
-                controller: _passwordController,
-                decoration: InputDecoration(
-                  labelText: 'New Password',
-                  border: OutlineInputBorder(),
-                ),
-                obscureText: true,
-                validator:
-                    (v) =>
-                        (v!.isNotEmpty && v.length < 6)
-                            ? 'Password too short (min 6)'
-                            : null,
-              ),
-              SizedBox(height: 16),
-              TextFormField(
-                controller: _confirmPasswordController,
-                decoration: InputDecoration(
-                  labelText: 'Confirm New Password',
-                  border: OutlineInputBorder(),
-                ),
-                obscureText: true,
-                validator: (v) {
-                  if (_passwordController.text.isNotEmpty &&
-                      v != _passwordController.text)
-                    return 'Passwords do not match';
-                  return null;
-                },
               ),
               SizedBox(height: 30),
               if (_submitError != null)

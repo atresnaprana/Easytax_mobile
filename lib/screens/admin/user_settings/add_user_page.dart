@@ -53,6 +53,7 @@ class _AddUserPageState extends State<AddUserPage> {
         "PHONE1": _phoneController.text.trim(),
         "Email": _emailController.text.trim().toLowerCase(),
         "Password": _passwordController.text,
+        "ConfirmPassword": _confirmPasswordController.text,
       });
 
       final url = Uri.parse('$baseUrl/api/API/CreateUser');
