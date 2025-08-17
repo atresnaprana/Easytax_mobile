@@ -46,6 +46,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: "^0.13.1" # Add this line
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -66,6 +67,12 @@ flutter:
   uses-material-design: true
   assets:
     - assets/easytaxlandscape.png
+
+flutter_launcher_icons:
+  android: "launcher_icon"   # The name of the icon file in Android (default is good)
+  ios: true                  # Generate icons for iOS? Yes.
+  image_path: "assets/EasyTaxLogo.png" # Path to your master logo file
+  min_sdk_android: 21          # Optional: ensures adaptive icons are generated
 
   # To add assets to your application, add an assets section, like this:
   # assets:
